@@ -5,6 +5,7 @@ use binread::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
+use std::path::Path;
 
 #[derive(BinRead, Debug)]
 struct Entry {
@@ -144,7 +145,7 @@ fn create_xmb_file(xmb_data: Xmb) -> XmbFile {
     xmb_file
 }
 
-pub fn read_xmb(file: &String) -> BinResult<XmbFile> {
+pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     let mut f = File::open(&file)?;
     let xmb_data = f.read_le::<Xmb>()?;
     Ok(create_xmb_file(xmb_data))
