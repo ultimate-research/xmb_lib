@@ -5,6 +5,7 @@ use binread::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
+use std::mem::size_of;
 use std::path::Path;
 
 #[derive(BinRead, Debug)]
@@ -66,8 +67,7 @@ struct Xmb {
     #[br(count = entry_count)]
     pub entries: FilePtr<u32, Vec<Entry>>,
 
-    #[br(count = property_count)]
-    pub properties: FilePtr<u32, Vec<Property>>,
+    pub properties_ptr: u32,
 
     pub node_map_ptr: u32,
 
@@ -109,10 +109,24 @@ impl XmbFile {
     }
 }
 
-fn add_properties(file_entry: &mut XmbFileEntry, entry: &Entry, xmb_data: &Xmb) {
+fn add_properties<R: Read + Seek>(
+    file_entry: &mut XmbFileEntry,
+    entry: &Entry,
+    xmb_data: &Xmb,
+    reader: &mut R,
+) {
     for property_index in 0..entry.property_count {
         let property_index = (entry.property_start_index + property_index) as usize;
-        let property = &xmb_data.properties[property_index];
+
+        // TODO: error handling
+        // There's no size for this array, so attempt to read 
+        // string offsets from the specified address.
+        let property_offset =
+            xmb_data.properties_ptr as usize + property_index * size_of::<Property>();
+        reader
+            .seek(SeekFrom::Start(property_offset as u64))
+            .unwrap();
+        let property: Property = reader.read_le().unwrap();
 
         let key = xmb_data.names.get(&property.name_offset).unwrap();
         let value = xmb_data.values.get(&property.value_offset).unwrap();
@@ -123,21 +137,25 @@ fn add_properties(file_entry: &mut XmbFileEntry, entry: &Entry, xmb_data: &Xmb) 
     }
 }
 
-fn create_file_entry(entry: &Entry, xmb_data: &Xmb) -> XmbFileEntry {
+fn create_file_entry<R: Read + Seek>(
+    entry: &Entry,
+    xmb_data: &Xmb,
+    reader: &mut R,
+) -> XmbFileEntry {
     let mut file_entry = XmbFileEntry::new();
 
     file_entry.name = xmb_data.names.get(&entry.name_offset).unwrap().to_string();
     file_entry.parent_index = entry.parent_index as i32;
-    add_properties(&mut file_entry, entry, xmb_data);
+    add_properties(&mut file_entry, entry, xmb_data, reader);
 
     file_entry
 }
 
-fn create_xmb_file(xmb_data: Xmb) -> XmbFile {
+fn create_xmb_file<R: Read + Seek>(xmb_data: Xmb, reader: &mut R) -> XmbFile {
     let mut xmb_file = XmbFile::new();
     for entry_index in 0..(xmb_data.entry_count as usize) {
         let entry = &xmb_data.entries[entry_index];
-        let file_entry = create_file_entry(&entry, &xmb_data);
+        let file_entry = create_file_entry(&entry, &xmb_data, reader);
         xmb_file.entries.push(file_entry);
     }
 
@@ -147,5 +165,5 @@ fn create_xmb_file(xmb_data: Xmb) -> XmbFile {
 pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     let mut f = File::open(&file)?;
     let xmb_data = f.read_le::<Xmb>()?;
-    Ok(create_xmb_file(xmb_data))
+    Ok(create_xmb_file(xmb_data, &mut f))
 }
