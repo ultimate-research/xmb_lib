@@ -1,10 +1,10 @@
 use binread::{
-    io::Read, io::Seek, io::SeekFrom, BinRead, BinReaderExt, BinResult, FilePtr, NullString,
+    io::Read, io::Seek, io::SeekFrom, io::Cursor, BinRead, BinReaderExt, BinResult, FilePtr, NullString,
     ReadOptions,
 };
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs;
 use std::mem::size_of;
 use std::path::Path;
 
@@ -163,7 +163,8 @@ fn create_xmb_file<R: Read + Seek>(xmb_data: Xmb, reader: &mut R) -> XmbFile {
 }
 
 pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
-    let mut f = File::open(&file)?;
-    let xmb_data = f.read_le::<Xmb>()?;
-    Ok(create_xmb_file(xmb_data, &mut f))
+    // XMB files are small, so load the whole file into memory.
+    let mut file = Cursor::new(fs::read(file)?);
+    let xmb_data = file.read_le::<Xmb>()?;
+    Ok(create_xmb_file(xmb_data, &mut file))
 }
