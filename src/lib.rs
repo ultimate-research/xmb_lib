@@ -34,19 +34,18 @@ fn parse_offset_string_map<R: Read + Seek>(
 
     reader.seek(SeekFrom::Start(strings_ptr as u64))?;
 
-    // There isn't a specified count for the number of strings,
-    // so keep reading until finding an empty string.
     let mut string_by_offset = HashMap::new();
     loop {
         let current_pos = reader.seek(SeekFrom::Current(0))? as u32;
         let relative_offset = current_pos - strings_ptr;
 
-        let text = NullString::read_options(reader, options, ())?;
-        let text = text.into_string();
-        if text == "" {
-            break;
+        // There isn't a specified count for the strings table, so keep trying to read.
+        match NullString::read_options(reader, options, ()) {
+            Ok(text) => {
+                string_by_offset.insert(relative_offset, text.into_string());
+            }
+            Err(_) => break,
         }
-        string_by_offset.insert(relative_offset, text);
     }
 
     reader.seek(SeekFrom::Start(saved_pos))?;
