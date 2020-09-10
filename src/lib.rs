@@ -1,6 +1,6 @@
 use binread::{
-    io::Read, io::Seek, io::SeekFrom, io::Cursor, BinRead, BinReaderExt, BinResult, FilePtr, NullString,
-    ReadOptions,
+    io::Cursor, io::Read, io::Seek, io::SeekFrom, BinRead, BinReaderExt, BinResult, FilePtr,
+    NullString, ReadOptions,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -82,9 +82,9 @@ struct Xmb {
 
 #[derive(Debug, Serialize)]
 pub struct XmbFileEntry {
-    name: String,
-    parent_index: i32,
-    attributes: std::collections::HashMap<String, String>,
+    pub name: String,
+    pub parent_index: i32,
+    pub attributes: std::collections::HashMap<String, String>,
 }
 
 impl XmbFileEntry {
@@ -99,7 +99,7 @@ impl XmbFileEntry {
 
 #[derive(Debug, Serialize)]
 pub struct XmbFile {
-    entries: Vec<XmbFileEntry>,
+    pub entries: Vec<XmbFileEntry>,
 }
 
 impl XmbFile {
@@ -119,7 +119,7 @@ fn add_properties<R: Read + Seek>(
         let property_index = (entry.property_start_index + property_index) as usize;
 
         // TODO: error handling
-        // There's no size for this array, so attempt to read 
+        // There's no size for this array, so attempt to read
         // string offsets from the specified address.
         let property_offset =
             xmb_data.properties_ptr as usize + property_index * size_of::<Property>();
