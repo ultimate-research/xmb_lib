@@ -8,4 +8,4 @@ Example for saving the output to a file:
 `xmb_lib.exe "model.xmb" > output.json`
 
 # Credits
-[SSBU-Tools](https://github.com/Sammi-Husky/SSBU-TOOLS) | [License](https://github.com/Sammi-Husky/SSBU-TOOLS/blob/master/LICENSE)- python script for parsing code and XMB format reference
+[SSBU-Tools](https://github.com/Sammi-Husky/SSBU-TOOLS) | [License](https://github.com/Sammi-Husky/SSBU-TOOLS/blob/master/LICENSE)- Original Python implementation for converting XMB to and from XML
