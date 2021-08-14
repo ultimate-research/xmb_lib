@@ -14,7 +14,6 @@ fn main() {
     let parse_start_time = Instant::now();
 
     let xmb = xmb_lib::read_xmb(Path::new(filename)).unwrap();
-
     let parse_time = parse_start_time.elapsed();
     eprintln!("Parse: {:?}", parse_time);
 
