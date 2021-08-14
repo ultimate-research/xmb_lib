@@ -9,7 +9,7 @@ pub struct Entry {
     pub property_start_index: i16,
     pub unk1: u16,
     pub parent_index: i16,
-    pub unk2: i16,
+    pub unk2: i16, // always -1?
 }
 
 #[derive(BinRead, Debug)]
@@ -33,7 +33,9 @@ pub struct Xmb {
     pub string_count: u32,
     pub mapped_entry_count: u32,
 
-    #[br(count = string_count)] // is this the correct count?
+    // TODO: Use this to cache the string lookups (names only)?
+    // TODO: This seems to be all the names in the string buffer, not including values.
+    #[br(count = string_count)]
     pub string_offsets: FilePtr<u32, Vec<u32>>, // sorted in alphabetical order by string
 
     #[br(count = entry_count)]
