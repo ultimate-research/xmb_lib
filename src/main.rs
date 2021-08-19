@@ -1,47 +1,31 @@
-use std::env;
-use std::path::Path;
+use binread::BinReaderExt;
+use std::io::Write;
 use std::time::Instant;
-
-use xmb_lib::{XmbFile, XmbFileEntry};
-use xmltree::{Element, EmitterConfig, XMLNode};
-
-fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
-    let children: Vec<_> = entry
-        .children
-        .iter()
-        .map(|e| XMLNode::Element(create_element_recursive(xmb, e)))
-        .collect();
-
-    xmltree::Element {
-        prefix: None,
-        namespace: None,
-        namespaces: None,
-        name: entry.name.clone(),
-        // TODO: IndexMap to preserve order.
-        attributes: entry.attributes.clone(),
-        children,
-    }
-}
+use std::{env, io::Cursor};
+use xmb_lib::XmbFile;
+use xmltree::EmitterConfig;
 
 fn main() {
+    // TODO: Clap for arguments.
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: smush_xmb.exe <xmb file>");
-        return;
-    }
+    // if args.len() != 2 {
+    //     println!("Usage: smush_xmb.exe <xmb file>");
+    //     return;
+    // }
 
     let filename = &args[1];
+    let output = &args[2];
 
     let parse_start_time = Instant::now();
 
-    let xmb = xmb_lib::read_xmb(Path::new(filename)).unwrap();
+    // let xmb = xmb_lib::read_xmb(Path::new(filename)).unwrap();
+    let mut reader = std::io::Cursor::new(std::fs::read(filename).unwrap());
+    let xmb: xmb_lib::xmb::Xmb = reader.read_le().unwrap();
     let parse_time = parse_start_time.elapsed();
     eprintln!("Parse: {:?}", parse_time);
 
-    // TODO: Make this a method on XmbFile.
-    // TODO: Don't assume this is the root entry or that there is a single root?
-    let entry = &xmb.entries[0];
-    let element = create_element_recursive(&xmb, entry);
+    let xmb_file = XmbFile::from(&xmb);
+    let element = xmb_file.to_xml();
 
     // Match the output of the original Python script where possible.
     let config = EmitterConfig::new()
@@ -54,4 +38,13 @@ fn main() {
 
     let result = writer.into_inner();
     println!("{}", String::from_utf8(result).unwrap());
+
+    let export_start_time = Instant::now();
+
+    let mut cursor = Cursor::new(Vec::new());
+    xmb.write(&mut cursor).unwrap();
+    let mut output_file = std::fs::File::create(output).unwrap();
+    output_file.write_all(cursor.get_mut()).unwrap();
+
+    eprintln!("Export: {:?}", export_start_time.elapsed());
 }

@@ -1,5 +1,6 @@
 use binread::{io::Cursor, BinReaderExt, BinResult};
 use serde::Serialize;
+use xmltree::{Element, XMLNode};
 use std::collections::HashMap;
 use std::fs;
 
@@ -23,6 +24,40 @@ pub struct XmbFileEntry {
 #[derive(Debug, Serialize)]
 pub struct XmbFile {
     pub entries: Vec<XmbFileEntry>,
+}
+
+impl XmbFile {
+    pub fn to_xml(&self) -> Element {
+        // TODO: Don't assume this is the root entry or that there is a single root?
+        let entry = &self.entries[0];
+        create_element_recursive(self, entry)
+    }
+}
+
+
+fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
+    let children: Vec<_> = entry
+        .children
+        .iter()
+        .map(|e| XMLNode::Element(create_element_recursive(xmb, e)))
+        .collect();
+
+    xmltree::Element {
+        prefix: None,
+        namespace: None,
+        namespaces: None,
+        name: entry.name.clone(),
+        // TODO: IndexMap to preserve order.
+        attributes: entry.attributes.clone(),
+        children,
+    }
+}
+
+
+impl From<&Xmb> for XmbFile {
+    fn from(xmb: &Xmb) -> Self {
+        create_xmb_file(xmb)
+    }
 }
 
 fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> HashMap<String, String> {
@@ -61,7 +96,7 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
     }
 }
 
-fn create_xmb_file(xmb_data: Xmb) -> XmbFile {
+fn create_xmb_file(xmb_data: &Xmb) -> XmbFile {
     // First find the nodes with no parents.
     // Then recursively add their children based on the parent index.
     let roots: Vec<_> = xmb_data
@@ -79,6 +114,10 @@ pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     // XMB files are small, so load the whole file into memory.
     let mut file = Cursor::new(fs::read(file)?);
     let xmb_data = file.read_le::<Xmb>()?;
+    for entry in xmb_data.mapped_entries.iter() {
+        let name = xmb_data.read_value(entry.value_offset).unwrap();
+        dbg!(name);
+    }
 
-    Ok(create_xmb_file(xmb_data))
+    Ok(create_xmb_file(&xmb_data))
 }

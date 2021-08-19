@@ -9,3 +9,5 @@ binread = "2.1.1"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 xmltree = "0.10.3"
+ssbh_lib = { git = "https://github.com/ultimate-research/ssbh_lib" }
+ssbh_write = { git = "https://github.com/ultimate-research/ssbh_lib" }
