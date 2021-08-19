@@ -64,7 +64,7 @@ pub struct Xmb {
 
 impl Xmb {
     pub fn read_name(&self, name_offset: u32) -> BinResult<String> {
-        let mut reader = Cursor::new(&self.string_data.0);
+        let mut reader = Cursor::new(&self.string_data.as_ref().unwrap().0);
         reader.seek(SeekFrom::Start(name_offset as u64))?;
         // TODO: Endianness doesn't matter for strings?
         let value: NullString = reader.read_le()?;
@@ -72,10 +72,10 @@ impl Xmb {
     }
 
     pub fn read_value(&self, value_offset: u32) -> BinResult<String> {
-        let mut reader = Cursor::new(&self.string_data.0);
+        let mut reader = Cursor::new(&self.string_data.as_ref().unwrap().0);
         // The offsets to the names and values are both relative to the start of the file.
         // Convert the values offset to a relative offset to use with the string buffer.
-        let values_start_offset = self.string_value_offset as u64 - self.string_data.1;
+        let values_start_offset = self.string_value_offset as u64 - self.string_data.as_ref().unwrap().1;
         reader.seek(SeekFrom::Start(value_offset as u64 + values_start_offset))?;
         // TODO: Endianness doesn't matter for strings?
         let value: NullString = reader.read_le()?;
@@ -83,6 +83,7 @@ impl Xmb {
     }
 
     pub fn write<W: Write + Seek>(&self, writer: &mut W) -> std::io::Result<()> {
+        // TODO: Magic support for SsbhWrite?
         writer.write_all(b"XMB ")?;
         let mut data_ptr = 4;
         self.ssbh_write(writer, &mut data_ptr)?;
@@ -110,6 +111,7 @@ impl BinRead for StringBuffer {
     }
 }
 
+// TODO: SsbhWrite lacks a skip attribute for the saved position, so this can't be derived.
 impl SsbhWrite for StringBuffer {
     fn ssbh_write<W: std::io::Write + std::io::Seek>(
         &self,
@@ -128,5 +130,9 @@ impl SsbhWrite for StringBuffer {
 
     fn size_in_bytes(&self) -> u64 {
         self.0.len() as u64
+    }
+
+    fn alignment_in_bytes() -> u64 {
+        4
     }
 }

@@ -66,7 +66,7 @@ fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> HashMap<String, String> {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
             // TODO: Start index doesn't seem to work for effect_locator.xmb files?
             let property_index = (entry.property_start_index as u16 + i) as usize;
-            let property = &xmb_data.properties[property_index];
+            let property = &xmb_data.properties.as_ref().unwrap()[property_index];
             let key = xmb_data.read_name(property.name_offset).unwrap();
             let value = xmb_data.read_value(property.value_offset).unwrap();
             (key, value)
@@ -78,7 +78,7 @@ fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> HashMap<String, String> {
 // It should be doable to iterate the entry list at most twice?
 fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) -> XmbFileEntry {
     let child_entries: Vec<_> = xmb_data
-        .entries
+        .entries.as_ref().unwrap()
         .iter()
         .enumerate()
         .filter(|(_, e)| e.parent_index == entry_index)
@@ -100,7 +100,7 @@ fn create_xmb_file(xmb_data: &Xmb) -> XmbFile {
     // First find the nodes with no parents.
     // Then recursively add their children based on the parent index.
     let roots: Vec<_> = xmb_data
-        .entries
+        .entries.as_ref().unwrap()
         .iter()
         .enumerate()
         .filter(|(_, e)| e.parent_index == -1)
@@ -114,10 +114,10 @@ pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     // XMB files are small, so load the whole file into memory.
     let mut file = Cursor::new(fs::read(file)?);
     let xmb_data = file.read_le::<Xmb>()?;
-    for entry in xmb_data.mapped_entries.iter() {
-        let name = xmb_data.read_value(entry.value_offset).unwrap();
-        dbg!(name);
-    }
+    // for entry in xmb_data.mapped_entries.as_ref().unwrap().iter() {
+    //     let name = xmb_data.read_value(entry.value_offset).unwrap();
+    //     dbg!(name);
+    // }
 
     Ok(create_xmb_file(&xmb_data))
 }
