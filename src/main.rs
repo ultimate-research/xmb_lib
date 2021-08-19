@@ -5,6 +5,9 @@ use std::{env, io::Cursor};
 use xmb_lib::XmbFile;
 use xmltree::EmitterConfig;
 
+// TODO: xml -> XmbFile -> Xmb
+// Is the entry order just BFS starting from the root?
+
 fn main() {
     // TODO: Clap for arguments.
     let args: Vec<String> = env::args().collect();
@@ -14,7 +17,7 @@ fn main() {
     // }
 
     let filename = &args[1];
-    let output = &args[2];
+    // let output = &args[2];
 
     let parse_start_time = Instant::now();
 
@@ -23,6 +26,11 @@ fn main() {
     let xmb: xmb_lib::xmb::Xmb = reader.read_le().unwrap();
     let parse_time = parse_start_time.elapsed();
     eprintln!("Parse: {:?}", parse_time);
+
+    
+    // for entry in xmb.entries.as_ref().unwrap().iter() {
+    //     dbg!(xmb.read_name(entry.name_offset).unwrap());
+    // }
 
     let xmb_file = XmbFile::from(&xmb);
     let element = xmb_file.to_xml();
@@ -39,12 +47,12 @@ fn main() {
     let result = writer.into_inner();
     println!("{}", String::from_utf8(result).unwrap());
 
-    let export_start_time = Instant::now();
+    // let export_start_time = Instant::now();
 
-    let mut cursor = Cursor::new(Vec::new());
-    xmb.write(&mut cursor).unwrap();
-    let mut output_file = std::fs::File::create(output).unwrap();
-    output_file.write_all(cursor.get_mut()).unwrap();
+    // let mut cursor = Cursor::new(Vec::new());
+    // xmb.write(&mut cursor).unwrap();
+    // let mut output_file = std::fs::File::create(output).unwrap();
+    // output_file.write_all(cursor.get_mut()).unwrap();
 
-    eprintln!("Export: {:?}", export_start_time.elapsed());
+    // eprintln!("Export: {:?}", export_start_time.elapsed());
 }
