@@ -1,4 +1,5 @@
 use binread::{io::Cursor, BinReaderExt, BinResult};
+use indexmap::IndexMap;
 use serde::Serialize;
 use xmltree::{Element, XMLNode};
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ pub struct Attributes(HashMap<String, String>);
 #[derive(Debug, Serialize)]
 pub struct XmbFileEntry {
     pub name: String,
-    pub attributes: HashMap<String, String>,
+    pub attributes: IndexMap<String, String>,
     pub children: Vec<XmbFileEntry>,
 }
 
@@ -47,7 +48,6 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
         namespace: None,
         namespaces: None,
         name: entry.name.clone(),
-        // TODO: IndexMap to preserve order.
         attributes: entry.attributes.clone(),
         children,
     }
@@ -60,7 +60,7 @@ impl From<&Xmb> for XmbFile {
     }
 }
 
-fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> HashMap<String, String> {
+fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> IndexMap<String, String> {
     (0..entry.property_count)
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
