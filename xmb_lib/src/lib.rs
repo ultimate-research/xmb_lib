@@ -1,6 +1,7 @@
 use binread::{io::Cursor, BinReaderExt, BinResult};
 use indexmap::IndexMap;
 use serde::Serialize;
+use ssbh_lib::Ptr32;
 use std::collections::HashMap;
 use std::fs;
 use xmltree::{Element, XMLNode};
@@ -33,10 +34,82 @@ impl XmbFile {
         let entry = &self.entries[0];
         create_element_recursive(self, entry)
     }
+
+    pub fn from_xml(root: &Element) -> Self {
+        // TODO: Multiple root nodes?
+        let root = create_entry_from_xml_recursive(root);
+        Self {
+            entries: vec![root],
+        }
+    }
+}
+
+// TODO: All these conversions can use test cases.
+fn create_entry_from_xml_recursive(xml_node: &Element) -> XmbFileEntry {
+    let children = xml_node
+        .children
+        .iter()
+        .filter_map(XMLNode::as_element)
+        .map(create_entry_from_xml_recursive)
+        .collect();
+
+    XmbFileEntry {
+        name: xml_node.name.clone(),
+        attributes: xml_node.attributes.clone(),
+        children,
+        // TODO: How to handle mapped entries?
+        mapped_children: Vec::new(),
+    }
 }
 
 // TODO: From<XmbFile> for Xmb
-// TODO: from_xml for XmbFile
+impl From<&Xmb> for XmbFile {
+    fn from(xmb: &Xmb) -> Self {
+        xmb_file_from_xmb(xmb)
+    }
+}
+
+impl From<&XmbFile> for Xmb {
+    fn from(xmb_file: &XmbFile) -> Self {
+        // TODO: Go in BFS order to "flatten" the entries?
+
+        // TODO: The offsets aren't yet known.
+        // TODO: Just collect the parent indices as a temporary step?
+        let mut entries = Vec::new();
+        for xmb_file_entry in &xmb_file.entries {
+            let entry = Entry {
+                name_offset: 0,
+                property_count: 0,
+                child_count: 0,
+                property_start_index: 0,
+                unk1: 0,
+                parent_index: 0,
+                unk2: 0,
+            };
+            entries.push(entry);
+        }
+
+        let properties = Vec::new();
+        let mapped_entries = Vec::new();
+        let string_offsets = Vec::new();
+
+        // TODO: Properly initialize these fields.
+        Self {
+            entry_count: entries.len() as u32,
+            property_count: properties.len() as u32,
+            string_count: 0,
+            mapped_entry_count: mapped_entries.len() as u32,
+            string_offsets: Ptr32::new(string_offsets),
+            entries: Ptr32::new(entries),
+            properties: Ptr32::new(properties),
+            mapped_entries: Ptr32::new(mapped_entries),
+            string_data: Ptr32::new(StringBuffer(Vec::new(), 0)),
+            string_value_offset: 0,
+            padding1: 0,
+            padding2: 0,
+        }
+    }
+}
 
 fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
     // Just create child elements for each mapped entry for now.
@@ -54,12 +127,6 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
         name: entry.name.clone(),
         attributes: entry.attributes.clone(),
         children,
-    }
-}
-
-impl From<&Xmb> for XmbFile {
-    fn from(xmb: &Xmb) -> Self {
-        create_xmb_file(xmb)
     }
 }
 
@@ -112,7 +179,6 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
                 attributes,
                 children: Vec::new(),
                 mapped_children: Vec::new(),
-
             }
         })
         .collect();
@@ -121,11 +187,11 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
         name: xmb_data.read_name(entry.name_offset).unwrap(),
         attributes: get_attributes(xmb_data, entry),
         children,
-        mapped_children
+        mapped_children,
     }
 }
 
-fn create_xmb_file(xmb_data: &Xmb) -> XmbFile {
+fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
     // First find the nodes with no parents.
     // Then recursively add their children based on the parent index.
     let roots: Vec<_> = xmb_data
@@ -147,5 +213,5 @@ pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     let mut file = Cursor::new(fs::read(file)?);
     let xmb_data = file.read_le::<Xmb>()?;
 
-    Ok(create_xmb_file(&xmb_data))
+    Ok(xmb_file_from_xmb(&xmb_data))
 }

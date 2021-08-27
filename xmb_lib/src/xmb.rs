@@ -1,7 +1,7 @@
 use binread::{BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::{io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 #[derive(BinRead, Debug, SsbhWrite)]
 pub struct Entry {
@@ -58,8 +58,8 @@ pub struct Xmb {
     pub string_value_offset: u32,
 
     // TODO: add align_after support per field for SsbhWrite
-    padding1: u32,
-    padding2: u128, // TODO: Is the header always padded to 64 bytes?
+    pub padding1: u32,
+    pub padding2: u128, // TODO: Is the header always padded to 64 bytes?
 }
 
 impl Xmb {
@@ -82,6 +82,19 @@ impl Xmb {
         Ok(value.to_string())
     }
 
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        // Buffer the entire file for performance since most XMB files are small.
+        let mut reader = std::io::Cursor::new(std::fs::read(path).unwrap());
+        let xmb: Xmb = reader.read_le()?;
+        Ok(xmb)
+    }
+
+    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn std::error::Error>> {
+        // TODO: Not all xmb files are little endian.
+        let xmb: Xmb = reader.read_le()?;
+        Ok(xmb)
+    }
+
     pub fn write<W: Write + Seek>(&self, writer: &mut W) -> std::io::Result<()> {
         // TODO: Magic support for SsbhWrite?
         writer.write_all(b"XMB ")?;
@@ -94,7 +107,7 @@ impl Xmb {
 // Store the buffer and its position.
 // This is a workaround to use two absolute pointers to the string section with SsbhWrite.
 #[derive(Debug)]
-pub struct StringBuffer(Vec<u8>, u64);
+pub struct StringBuffer(pub Vec<u8>, pub u64);
 
 impl BinRead for StringBuffer {
     type Args = ();
