@@ -1,13 +1,14 @@
+use binread::NullString;
 use binread::{io::Cursor, BinReaderExt, BinResult};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use xmltree::{Element, XMLNode};
-
+use std::io::{Seek, Write};
 use std::path::Path;
 use xmb::*;
+use xmltree::{Element, XMLNode};
 
 pub mod xmb;
 
@@ -69,42 +70,131 @@ impl From<&Xmb> for XmbFile {
     }
 }
 
+struct XmbEntryTemp {
+    name: String,
+    attributes: Vec<(String, String)>,
+    parent_index: Option<usize>,
+}
+
+// Create temp types to flatten the list before writing offsets.
+// This avoids leaving structs partially initialized with correct data.
+// TODO: Is there a way to avoid this extra step?
+fn add_temp_entries_recursive(
+    entry: &XmbFileEntry,
+    temp_entries: &mut Vec<XmbEntryTemp>,
+    parent_index: Option<usize>,
+) {
+    let temp = XmbEntryTemp {
+        name: entry.name.clone(),
+        attributes: entry
+            .attributes
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        parent_index,
+    };
+    let current_index = temp_entries.len();
+    temp_entries.push(temp);
+
+    for child in &entry.children {
+        add_temp_entries_recursive(child, temp_entries, Some(current_index));
+    }
+}
+
 impl From<&XmbFile> for Xmb {
     fn from(xmb_file: &XmbFile) -> Self {
+        // TODO: This could be more efficient by owning the XmbFile to avoid copying strings.
         // TODO: Go in BFS order to "flatten" the entries?
+        let mut flattened_temp_entries = Vec::new();
+        for entry in &xmb_file.entries {
+            add_temp_entries_recursive(entry, &mut flattened_temp_entries, None);
+        }
+
+        // 1. Collect the entry names and attribute names and sort alphabetically?
+        // TODO: This can also initialize the offsets and string buffers.
+        // TODO: Is this used for some sort of lookup?
+        let mut names = IndexSet::new();
+        let mut values = IndexSet::new();
+        for entry in &flattened_temp_entries {
+            names.insert(entry.name.clone());
+            for (k, v) in &entry.attributes {
+                names.insert(k.to_string());
+                values.insert(v);
+            }
+        }
+
+        // 2. Use these names to initialize the offsets.
+        // It makes sense to make the buffers and offsets at the same time.
+        // This avoids relying on string length.
+        // TODO: Avoid unwrap.
+        // TODO: How to sort the string_offsets alphabetically by string?
+        let mut string_offsets = BTreeMap::new();
+        let mut names_buffer = Cursor::new(Vec::new());
+        for name in names {
+            string_offsets.insert(name.clone(), names_buffer.stream_position().unwrap() as u32);
+
+            names_buffer.write_all(name.as_bytes()).unwrap();
+            names_buffer.write_all(&[0u8]).unwrap();
+        }
+
+        let mut values_offsets = BTreeMap::new();
+        let mut values_buffer = Cursor::new(Vec::new());
+        for value in values {
+            values_offsets.insert(value.clone(), values_buffer.stream_position().unwrap() as u32);
+
+            values_buffer.write_all(value.as_bytes()).unwrap();
+            values_buffer.write_all(&[0u8]).unwrap();
+        }
+
+        // TODO: Add the value strings.
+        // The string buffer seems to just use the order of appearance while only including unique values.
+        // i.e. entry 1 name -> attribute 1 name ->  attribute 2 name -> entry 2 name -> ...
+        // similar for attribute values
 
         // TODO: The offsets aren't yet known.
         // TODO: Just collect the parent indices as a temporary step?
+        let mut properties = Vec::new();
+
         let mut entries = Vec::new();
-        for xmb_file_entry in &xmb_file.entries {
+        for temp_entry in flattened_temp_entries {
+            // TODO: Add properties for each attribute in order.
+            // TODO: Rename to attributes?
+            let propert_start_index = properties.len();
+
+            let entry_properties: Vec<_> = temp_entry.attributes.iter().map(|(k,v)| Property {
+                name_offset: *string_offsets.get(k).unwrap(),
+                value_offset: *values_offsets.get(v).unwrap(),
+            }).collect();
+
             let entry = Entry {
-                name_offset: 0,
-                property_count: 0,
-                child_count: 0,
-                property_start_index: 0,
-                unk1: 0,
-                parent_index: 0,
-                unk2: 0,
+                name_offset: *string_offsets.get(&temp_entry.name).unwrap(),
+                property_count: entry_properties.len() as u16,
+                child_count: 0, // TODO:
+                property_start_index: propert_start_index as i16,
+                unk1: 0, // TODO:
+                parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
+                unk2: -1,
             };
             entries.push(entry);
+
+            properties.extend(entry_properties);
         }
 
-        let properties = Vec::new();
         let mapped_entries = Vec::new();
-        let string_offsets = Vec::new();
 
         // TODO: Properly initialize these fields.
         Self {
             entry_count: entries.len() as u32,
             property_count: properties.len() as u32,
-            string_count: 0,
+            string_count: string_offsets.len() as u32,
             mapped_entry_count: mapped_entries.len() as u32,
-            string_offsets: Ptr32::new(string_offsets),
+            string_offsets: Ptr32::new(string_offsets.values().map(|v| *v).collect()),
             entries: Ptr32::new(entries),
             properties: Ptr32::new(properties),
             mapped_entries: Ptr32::new(mapped_entries),
-            string_data: Ptr32::new(StringBuffer(Vec::new(), 0)),
-            string_value_offset: 0,
+            // TODO:
+            string_names: Ptr32::new(StringBuffer(Vec::new())),
+            string_values: Ptr32::new(StringBuffer(Vec::new())),
             padding1: 0,
             padding2: 0,
         }

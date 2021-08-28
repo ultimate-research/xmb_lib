@@ -1,7 +1,11 @@
 use binread::{BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
-use std::{io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
+use std::{
+    io::{Cursor, Read, Seek, SeekFrom, Write},
+    num::NonZeroU8,
+    path::Path,
+};
 
 #[derive(BinRead, Debug, SsbhWrite)]
 pub struct Entry {
@@ -32,6 +36,7 @@ pub struct MappedEntry {
 // TODO: bigendian if node_count has FF000000 > 0?
 #[derive(BinRead, Debug, SsbhWrite)]
 #[br(magic = b"XMB ")]
+#[ssbhwrite(align_after = 4)]
 pub struct Xmb {
     pub entry_count: u32,
     pub property_count: u32,
@@ -52,10 +57,11 @@ pub struct Xmb {
     #[br(count = mapped_entry_count)]
     pub mapped_entries: Ptr32<Vec<MappedEntry>>,
 
-    // This is technically two pointers to the string section.
-    // Only the first pointer is read to avoid parsing/writing the data twice.
-    pub string_data: Ptr32<StringBuffer>,
-    pub string_value_offset: u32,
+    #[br(count = string_count)]
+    pub string_names: Ptr32<StringBuffer>,
+
+    // TODO: Not specifying count is a confusing way to specify read to eof.
+    pub string_values: Ptr32<StringBuffer>,
 
     // TODO: add align_after support per field for SsbhWrite
     pub padding1: u32,
@@ -63,23 +69,23 @@ pub struct Xmb {
 }
 
 impl Xmb {
-    pub fn read_name(&self, name_offset: u32) -> BinResult<String> {
-        let mut reader = Cursor::new(&self.string_data.as_ref().unwrap().0);
-        reader.seek(SeekFrom::Start(name_offset as u64))?;
-        // TODO: Endianness doesn't matter for strings?
-        let value: NullString = reader.read_le()?;
-        Ok(value.to_string())
+    pub fn read_name(&self, name_offset: u32) -> Option<String> {
+        // TODO: This is a messy way to find the string with the given offset.
+        self.string_names
+            .as_ref()?
+            .0
+            .iter()
+            .find(|(offset, _)| *offset == name_offset as u64)
+            .map(|(_, value)| value.to_string())
     }
 
-    pub fn read_value(&self, value_offset: u32) -> BinResult<String> {
-        let mut reader = Cursor::new(&self.string_data.as_ref().unwrap().0);
-        // The offsets to the names and values are both relative to the start of the file.
-        // Convert the values offset to a relative offset to use with the string buffer.
-        let values_start_offset = self.string_value_offset as u64 - self.string_data.as_ref().unwrap().1;
-        reader.seek(SeekFrom::Start(value_offset as u64 + values_start_offset))?;
-        // TODO: Endianness doesn't matter for strings?
-        let value: NullString = reader.read_le()?;
-        Ok(value.to_string())
+    pub fn read_value(&self, value_offset: u32) -> Option<String> {
+        self.string_values
+            .as_ref()?
+            .0
+            .iter()
+            .find(|(offset, _)| *offset == value_offset as u64)
+            .map(|(_, value)| value.to_string())
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
@@ -104,23 +110,51 @@ impl Xmb {
     }
 }
 
-// Store the buffer and its position.
-// This is a workaround to use two absolute pointers to the string section with SsbhWrite.
 #[derive(Debug)]
-pub struct StringBuffer(pub Vec<u8>, pub u64);
+pub struct StringBuffer(pub Vec<(u64, NullString)>);
 
 impl BinRead for StringBuffer {
     type Args = ();
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
-        _options: &ReadOptions,
+        options: &ReadOptions,
         _args: Self::Args,
     ) -> BinResult<Self> {
-        let pos = reader.stream_position()?;
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
-        Ok(Self(buf, pos))
+        let mut values = Vec::new();
+        // The string names have a specified count.
+        if let Some(count) = options.count {
+            let start = reader.stream_position()?;
+            for _ in 0..count {
+                let relative_offset = reader.stream_position()? - start;
+                let value: NullString = reader.read_le()?;
+                values.push((relative_offset, value));
+            }
+        } else {
+            // HACK: Create a second buffer to be able to detect EOF.
+            // There's probably a nicer way of reading null terminated strings in a loop.
+            // TODO: Check if the reader position hasn't moved since the last iteration instead?
+            let mut buffer = Vec::new();
+            reader.read_to_end(&mut buffer)?;
+
+            // This case is just to handle the string values going until EOF.
+            // The names buffer has a specified string count.
+            let mut buffer_reader = Cursor::new(buffer);
+            loop {
+                let relative_offset = (&mut buffer_reader).stream_position()?;
+                if relative_offset as usize >= (&mut buffer_reader).get_ref().len() {
+                    break;
+                }
+                let byte_result: Result<Vec<u8>, _> = (&mut buffer_reader)
+                    .bytes()
+                    .take_while(|b| !matches!(b, Ok(0)))
+                    .collect();
+                let bytes: Vec<_> = byte_result?.into_iter().map(|x| unsafe { NonZeroU8::new_unchecked(x)}).collect();
+                values.push((relative_offset, bytes.into()));
+            }
+        }
+
+        Ok(Self(values))
     }
 }
 
@@ -136,7 +170,11 @@ impl SsbhWrite for StringBuffer {
             *data_ptr = current_pos + self.size_in_bytes();
         }
 
-        writer.write_all(&self.0)?;
+        // Write each string and null terminator.
+        for (_, value) in &self.0 {
+            writer.write_all(&value.0)?;
+            writer.write_all(&[0u8])?;
+        }
 
         Ok(())
     }
