@@ -15,7 +15,7 @@ pub mod xmb;
 #[derive(Debug, Serialize)]
 pub struct Attributes(HashMap<String, String>);
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct XmbFileEntry {
     pub name: String,
     pub attributes: IndexMap<String, String>,
@@ -23,7 +23,7 @@ pub struct XmbFileEntry {
     pub mapped_children: Vec<XmbFileEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct XmbFile {
     pub entries: Vec<XmbFileEntry>,
 }
@@ -214,4 +214,68 @@ pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
     let xmb_data = file.read_le::<Xmb>()?;
 
     Ok(xmb_file_from_xmb(&xmb_data))
+}
+
+// TODO: Separate file for XmbFile types?
+#[cfg(test)]
+mod tests {
+    // XMB is a binary version of XML, so construct XML documents by hand.
+    // This tests the necessary format features with substantially smaller test cases.
+    use super::*;
+    use indexmap::indexmap;
+
+    #[test]
+    fn xmb_file_to_from_xml() {
+        // TODO: Indoc?
+        let data = r#"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <root a="1" b="2">
+            <child1 a="3" b="4">
+                <subchild1 c="7" d="8" e="f"/> 
+            </child1>
+            <child2 a="5" b="6"/>
+        </root>"#;
+        let element = Element::parse(data.as_bytes()).unwrap();
+
+        let xmb_file = XmbFile::from_xml(&element);
+        assert_eq!(
+            XmbFile {
+                entries: vec![XmbFileEntry {
+                    name: "root".into(),
+                    attributes: indexmap!["a".into() => "1".into(), "b".into() => "2".into()],
+                    children: vec![
+                        XmbFileEntry {
+                            name: "child1".into(),
+                            attributes: indexmap!["a".into() => "3".into(), "b".into() => "4".into()],
+                            children: vec![XmbFileEntry {
+                                name: "subchild1".into(),
+                                attributes: indexmap![
+                                    "c".into() => "7".into(),
+                                    "d".into() => "8".into(),
+                                    "e".into() => "f".into()
+                                ],
+                                children: Vec::new(),
+                                mapped_children: Vec::new()
+                            }],
+                            mapped_children: Vec::new()
+                        },
+                        XmbFileEntry {
+                            name: "child2".into(),
+                            attributes: indexmap!["a".into() => "5".into(), "b".into() => "6".into()],
+                            children: Vec::new(),
+                            mapped_children: Vec::new()
+                        }
+                    ],
+                    mapped_children: Vec::new()
+                }]
+            },
+            xmb_file
+        );
+
+        // Just test the tree representation to avoid testing formatting differences.
+        let output_element = xmb_file.to_xml();
+        assert_eq!(element, output_element);
+    }
+
+    // TODO: Test mapped entries?
 }
