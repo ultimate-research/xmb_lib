@@ -7,6 +7,8 @@ use std::{
     path::Path,
 };
 
+// TODO: Limit the number of nodes to fall within the appropriate ranges?
+// This is limited by the number of bits for the indices rather than entry count.
 #[derive(BinRead, Debug, SsbhWrite)]
 pub struct Entry {
     pub name_offset: u32,

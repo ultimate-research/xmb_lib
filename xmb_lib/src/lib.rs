@@ -92,7 +92,7 @@ fn add_temp_entries_recursive(
 ) {
     // TODO: Does this count as BFS?
     // TODO: This is pretty inefficient.
-    let new_children: Vec<_> = children.iter().map(|child| {
+    let new_children: Vec<_> = children.iter().enumerate().map(|(i,child)| {
         XmbEntryTemp {
             name: child.name.clone(),
             attributes: child
@@ -102,8 +102,8 @@ fn add_temp_entries_recursive(
                 .collect(),
             parent_index,
             child_count: child.children.len(),
-            index: temp_entries.len(),
-            unk1: 0
+            index: temp_entries.len() + i,
+            unk1: 0 // TODO
         }
     }).collect();
 
@@ -186,7 +186,7 @@ impl From<&XmbFile> for Xmb {
         let mut entries = Vec::new();
         for temp_entry in &flattened_temp_entries {
             // TODO: Rename properties to attributes?
-            let property_start_index = if properties.is_empty() { -1} else { properties.len() as i16};
+            let property_start_index = if temp_entry.attributes.is_empty() { -1} else { properties.len() as i16};
 
             let entry_properties: Vec<_> = temp_entry.attributes.iter().map(|(k,v)| Property {
                 name_offset: *string_offsets.get(k).unwrap(),
@@ -198,7 +198,7 @@ impl From<&XmbFile> for Xmb {
                 property_count: entry_properties.len() as u16,
                 child_count: temp_entry.child_count as u16,
                 property_start_index,
-                unk1: 0, // TODO: child start_index or entries.len() if no children?
+                unk1: temp_entry.unk1 as u16,
                 parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
                 unk2: -1,
             };
