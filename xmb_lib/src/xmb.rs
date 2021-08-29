@@ -2,7 +2,7 @@ use binread::{BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
 use std::{
-    io::{Cursor, Read, Seek, SeekFrom, Write},
+    io::{Cursor, Read, Seek, Write},
     num::NonZeroU8,
     path::Path,
 };
@@ -54,6 +54,8 @@ pub struct Xmb {
     #[br(count = property_count)]
     pub properties: Ptr32<Vec<Property>>,
 
+    // TODO: These values are sorted alphabetically.
+    // This is likely just some sort of lookup.
     #[br(count = mapped_entry_count)]
     pub mapped_entries: Ptr32<Vec<MappedEntry>>,
 
@@ -108,6 +110,14 @@ impl Xmb {
         self.ssbh_write(writer, &mut data_ptr)?;
         Ok(())
     }
+
+    pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
+        let mut writer = Cursor::new(Vec::new());
+        self.write(&mut writer)?;
+        let mut output = std::fs::File::create(path)?;
+        output.write_all(writer.get_mut())?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -149,7 +159,10 @@ impl BinRead for StringBuffer {
                     .bytes()
                     .take_while(|b| !matches!(b, Ok(0)))
                     .collect();
-                let bytes: Vec<_> = byte_result?.into_iter().map(|x| unsafe { NonZeroU8::new_unchecked(x)}).collect();
+                let bytes: Vec<_> = byte_result?
+                    .into_iter()
+                    .map(|x| unsafe { NonZeroU8::new_unchecked(x) })
+                    .collect();
                 values.push((relative_offset, bytes.into()));
             }
         }

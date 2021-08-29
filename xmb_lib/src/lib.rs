@@ -6,6 +6,7 @@ use ssbh_lib::Ptr32;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{Seek, Write};
+use std::num::NonZeroU8;
 use std::path::Path;
 use xmb::*;
 use xmltree::{Element, XMLNode};
@@ -74,6 +75,10 @@ struct XmbEntryTemp {
     name: String,
     attributes: Vec<(String, String)>,
     parent_index: Option<usize>,
+    child_count: usize,
+    // TODO: Find a way to avoid partially initializing this.
+    // This is the index of the next entry in a DFS traversal or 
+    next_dfs_index: usize
 }
 
 // Create temp types to flatten the list before writing offsets.
@@ -84,6 +89,8 @@ fn add_temp_entries_recursive(
     temp_entries: &mut Vec<XmbEntryTemp>,
     parent_index: Option<usize>,
 ) {
+    let current_index = temp_entries.len();
+
     let temp = XmbEntryTemp {
         name: entry.name.clone(),
         attributes: entry
@@ -92,8 +99,9 @@ fn add_temp_entries_recursive(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
         parent_index,
+        child_count: entry.children.len(),
+        next_dfs_index: 0
     };
-    let current_index = temp_entries.len();
     temp_entries.push(temp);
 
     for child in &entry.children {
@@ -101,6 +109,14 @@ fn add_temp_entries_recursive(
     }
 }
 
+fn get_null_string(bytes: &[u8]) -> NullString {
+    // TODO: This should take up to the first non zero byte rather than filtering 0 bytes.
+    // TODO: This will probably be cleaner without using NullString.
+    let bytes_nonzero: Vec<_> = bytes.iter().filter_map(|b| NonZeroU8::new(*b)).collect();
+    bytes_nonzero.into()
+}
+
+// TODO: Find a way to test this conversion.
 impl From<&XmbFile> for Xmb {
     fn from(xmb_file: &XmbFile) -> Self {
         // TODO: This could be more efficient by owning the XmbFile to avoid copying strings.
@@ -130,20 +146,28 @@ impl From<&XmbFile> for Xmb {
         // TODO: How to sort the string_offsets alphabetically by string?
         let mut string_offsets = BTreeMap::new();
         let mut names_buffer = Cursor::new(Vec::new());
+        let mut string_names = Vec::new();
         for name in names {
-            string_offsets.insert(name.clone(), names_buffer.stream_position().unwrap() as u32);
+            let offset = names_buffer.stream_position().unwrap();
+            string_offsets.insert(name.clone(), offset as u32);
 
             names_buffer.write_all(name.as_bytes()).unwrap();
             names_buffer.write_all(&[0u8]).unwrap();
+
+            string_names.push((offset, get_null_string(name.as_bytes())));
         }
 
         let mut values_offsets = BTreeMap::new();
         let mut values_buffer = Cursor::new(Vec::new());
+        let mut string_values = Vec::new();
         for value in values {
-            values_offsets.insert(value.clone(), values_buffer.stream_position().unwrap() as u32);
+            let offset = values_buffer.stream_position().unwrap();
+            values_offsets.insert(value.clone(), offset as u32);
 
             values_buffer.write_all(value.as_bytes()).unwrap();
             values_buffer.write_all(&[0u8]).unwrap();
+
+            string_values.push((offset, get_null_string(value.as_bytes())));
         }
 
         // TODO: Add the value strings.
@@ -156,7 +180,7 @@ impl From<&XmbFile> for Xmb {
         let mut properties = Vec::new();
 
         let mut entries = Vec::new();
-        for temp_entry in flattened_temp_entries {
+        for temp_entry in &flattened_temp_entries {
             // TODO: Add properties for each attribute in order.
             // TODO: Rename to attributes?
             let propert_start_index = properties.len();
@@ -169,9 +193,9 @@ impl From<&XmbFile> for Xmb {
             let entry = Entry {
                 name_offset: *string_offsets.get(&temp_entry.name).unwrap(),
                 property_count: entry_properties.len() as u16,
-                child_count: 0, // TODO:
+                child_count: temp_entry.child_count as u16,
                 property_start_index: propert_start_index as i16,
-                unk1: 0, // TODO:
+                unk1: flattened_temp_entries.len() as u16, // TODO: child start_index or entries.len() if no children?
                 parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
                 unk2: -1,
             };
@@ -180,9 +204,9 @@ impl From<&XmbFile> for Xmb {
             properties.extend(entry_properties);
         }
 
+        // TODO: Mapped entries.
         let mapped_entries = Vec::new();
 
-        // TODO: Properly initialize these fields.
         Self {
             entry_count: entries.len() as u32,
             property_count: properties.len() as u32,
@@ -192,9 +216,8 @@ impl From<&XmbFile> for Xmb {
             entries: Ptr32::new(entries),
             properties: Ptr32::new(properties),
             mapped_entries: Ptr32::new(mapped_entries),
-            // TODO:
-            string_names: Ptr32::new(StringBuffer(Vec::new())),
-            string_values: Ptr32::new(StringBuffer(Vec::new())),
+            string_names: Ptr32::new(StringBuffer(string_names)),
+            string_values: Ptr32::new(StringBuffer(string_values)),
             padding1: 0,
             padding2: 0,
         }
