@@ -71,41 +71,49 @@ impl From<&Xmb> for XmbFile {
     }
 }
 
+#[derive(Debug, Clone)]
 struct XmbEntryTemp {
     name: String,
     attributes: Vec<(String, String)>,
     parent_index: Option<usize>,
     child_count: usize,
-    // TODO: Find a way to avoid partially initializing this.
-    // This is the index of the next entry in a DFS traversal or 
-    next_dfs_index: usize
+    index: usize,
+    // TODO: This is based on groups of children.
+    unk1: usize
 }
 
 // Create temp types to flatten the list before writing offsets.
 // This avoids leaving structs partially initialized with correct data.
 // TODO: Is there a way to avoid this extra step?
 fn add_temp_entries_recursive(
-    entry: &XmbFileEntry,
+    children: &[XmbFileEntry],
     temp_entries: &mut Vec<XmbEntryTemp>,
     parent_index: Option<usize>,
 ) {
-    let current_index = temp_entries.len();
+    // TODO: Does this count as BFS?
+    // TODO: This is pretty inefficient.
+    let new_children: Vec<_> = children.iter().map(|child| {
+        XmbEntryTemp {
+            name: child.name.clone(),
+            attributes: child
+                .attributes
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            parent_index,
+            child_count: child.children.len(),
+            index: temp_entries.len(),
+            unk1: 0
+        }
+    }).collect();
 
-    let temp = XmbEntryTemp {
-        name: entry.name.clone(),
-        attributes: entry
-            .attributes
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
-        parent_index,
-        child_count: entry.children.len(),
-        next_dfs_index: 0
-    };
-    temp_entries.push(temp);
+    // Create a copy just as a way to know the parent index.
+    temp_entries.extend(new_children.clone());
 
-    for child in &entry.children {
-        add_temp_entries_recursive(child, temp_entries, Some(current_index));
+    // TODO: Recurse on each child's children.
+    for (child, temp) in children.iter().zip(new_children) {
+        // TODO: Properly set the parent index.
+        add_temp_entries_recursive(&child.children, temp_entries, Some(temp.index));
     }
 }
 
@@ -122,9 +130,7 @@ impl From<&XmbFile> for Xmb {
         // TODO: This could be more efficient by owning the XmbFile to avoid copying strings.
         // TODO: Go in BFS order to "flatten" the entries?
         let mut flattened_temp_entries = Vec::new();
-        for entry in &xmb_file.entries {
-            add_temp_entries_recursive(entry, &mut flattened_temp_entries, None);
-        }
+        add_temp_entries_recursive(&xmb_file.entries, &mut flattened_temp_entries, None);
 
         // 1. Collect the entry names and attribute names and sort alphabetically?
         // TODO: This can also initialize the offsets and string buffers.
@@ -175,15 +181,12 @@ impl From<&XmbFile> for Xmb {
         // i.e. entry 1 name -> attribute 1 name ->  attribute 2 name -> entry 2 name -> ...
         // similar for attribute values
 
-        // TODO: The offsets aren't yet known.
-        // TODO: Just collect the parent indices as a temporary step?
         let mut properties = Vec::new();
 
         let mut entries = Vec::new();
         for temp_entry in &flattened_temp_entries {
-            // TODO: Add properties for each attribute in order.
-            // TODO: Rename to attributes?
-            let propert_start_index = properties.len();
+            // TODO: Rename properties to attributes?
+            let property_start_index = if properties.is_empty() { -1} else { properties.len() as i16};
 
             let entry_properties: Vec<_> = temp_entry.attributes.iter().map(|(k,v)| Property {
                 name_offset: *string_offsets.get(k).unwrap(),
@@ -194,8 +197,8 @@ impl From<&XmbFile> for Xmb {
                 name_offset: *string_offsets.get(&temp_entry.name).unwrap(),
                 property_count: entry_properties.len() as u16,
                 child_count: temp_entry.child_count as u16,
-                property_start_index: propert_start_index as i16,
-                unk1: flattened_temp_entries.len() as u16, // TODO: child start_index or entries.len() if no children?
+                property_start_index,
+                unk1: 0, // TODO: child start_index or entries.len() if no children?
                 parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
                 unk2: -1,
             };

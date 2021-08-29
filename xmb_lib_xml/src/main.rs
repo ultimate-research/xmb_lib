@@ -22,22 +22,44 @@ fn main() {
             let xmb_file = XmbFile::from_xml(&element);
             let xmb = Xmb::from(&xmb_file);
 
+            for (i,entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
+                println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
+            }
+            println!();
+            
+            for (i,entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
+                // println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
+                // println!("{:?} {:?}", i, entry.unk1);
+
+                // if entry.unk1 < xmb.entry_count as u16 {
+                    let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
+                    println!("{} : {} -> {} : {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1, xmb.read_name(next_node.name_offset).unwrap());
+                // }
+                // println!();
+            }
+
             let output = PathBuf::from(input).with_extension("out.xmb");
             xmb.write_to_file(output).unwrap();
         }
         "xmb" => {
             let xmb = Xmb::from_file(input).unwrap();
             let xmb_file = XmbFile::from(&xmb);
-            println!("{:#?}", &xmb);
-            println!("{:#?}", &xmb_file);
-
             for (i,entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
                 println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
+            }
+            println!();
+            // println!("{:#?}", &xmb);
+            // println!("{:#?}", &xmb_file);
+
+            for (i,entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
+                // println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
+                // println!("{:?} {:?}", i, entry.unk1);
+
                 if entry.unk1  < xmb.entry_count as u16 {
                     let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
-                    println!("{:?}: {:?}", entry.unk1, xmb.read_name(next_node.name_offset).unwrap());
+                    println!("{} : {} -> {} : {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1, xmb.read_name(next_node.name_offset).unwrap());
                 }
-                println!();
+                // println!();
             }
 
             let element = xmb_file.to_xml();

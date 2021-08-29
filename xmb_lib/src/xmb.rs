@@ -13,7 +13,7 @@ pub struct Entry {
     pub property_count: u16,
     pub child_count: u16,
     pub property_start_index: i16,
-    pub unk1: u16,
+    pub unk1: u16, // TODO: first child index or start of next child group
     pub parent_index: i16,
     pub unk2: i16, // always -1?
 }
