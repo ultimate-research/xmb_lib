@@ -3,7 +3,7 @@ use binread::{io::Cursor, BinReaderExt, BinResult};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{Seek, Write};
 use std::num::NonZeroU8;
@@ -78,8 +78,6 @@ struct XmbEntryTemp {
     parent_index: Option<usize>,
     child_count: usize,
     index: usize,
-    // TODO: This is based on groups of children.
-    unk1: usize
 }
 
 // Create temp types to flatten the list before writing offsets.
@@ -90,29 +88,31 @@ fn add_temp_entries_recursive(
     temp_entries: &mut Vec<XmbEntryTemp>,
     parent_index: Option<usize>,
 ) {
-    // TODO: Does this count as BFS?
-    // TODO: This is pretty inefficient.
-    let new_children: Vec<_> = children.iter().enumerate().map(|(i,child)| {
-        XmbEntryTemp {
-            name: child.name.clone(),
-            attributes: child
-                .attributes
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            parent_index,
-            child_count: child.children.len(),
-            index: temp_entries.len() + i,
-            unk1: 0 // TODO
-        }
-    }).collect();
+    let new_children: Vec<_> = children
+        .iter()
+        .enumerate()
+        .map(|(i, child)| {
+            let temp = XmbEntryTemp {
+                name: child.name.clone(),
+                attributes: child
+                    .attributes
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                parent_index,
+                child_count: child.children.len(),
+                index: temp_entries.len() + i,
+            };
+
+            temp
+        })
+        .collect();
 
     // Create a copy just as a way to know the parent index.
+    // TODO: This is pretty inefficient.
     temp_entries.extend(new_children.clone());
 
-    // TODO: Recurse on each child's children.
     for (child, temp) in children.iter().zip(new_children) {
-        // TODO: Properly set the parent index.
         add_temp_entries_recursive(&child.children, temp_entries, Some(temp.index));
     }
 }
@@ -128,9 +128,19 @@ fn get_null_string(bytes: &[u8]) -> NullString {
 impl From<&XmbFile> for Xmb {
     fn from(xmb_file: &XmbFile) -> Self {
         // TODO: This could be more efficient by owning the XmbFile to avoid copying strings.
-        // TODO: Go in BFS order to "flatten" the entries?
+
+        // Flatten the tree by iterating in the expected entry order in the XMB file.
         let mut flattened_temp_entries = Vec::new();
         add_temp_entries_recursive(&xmb_file.entries, &mut flattened_temp_entries, None);
+
+        // Calculate unk1 for each entry.
+        for entry in &flattened_temp_entries {
+            let unk1 = calculate_unk1(&flattened_temp_entries, entry);
+
+            // println!("{} : -> {}", entry.index, unk1);
+        }
+
+        // TODO: Just calculate unk1 here?
 
         // 1. Collect the entry names and attribute names and sort alphabetically?
         // TODO: This can also initialize the offsets and string buffers.
@@ -186,19 +196,29 @@ impl From<&XmbFile> for Xmb {
         let mut entries = Vec::new();
         for temp_entry in &flattened_temp_entries {
             // TODO: Rename properties to attributes?
-            let property_start_index = if temp_entry.attributes.is_empty() { -1} else { properties.len() as i16};
+            let property_start_index = if temp_entry.attributes.is_empty() {
+                -1
+            } else {
+                properties.len() as i16
+            };
 
-            let entry_properties: Vec<_> = temp_entry.attributes.iter().map(|(k,v)| Property {
-                name_offset: *string_offsets.get(k).unwrap(),
-                value_offset: *values_offsets.get(v).unwrap(),
-            }).collect();
+            let unk1 = calculate_unk1(&flattened_temp_entries, temp_entry) as u16;
+
+            let entry_properties: Vec<_> = temp_entry
+                .attributes
+                .iter()
+                .map(|(k, v)| Property {
+                    name_offset: *string_offsets.get(k).unwrap(),
+                    value_offset: *values_offsets.get(v).unwrap(),
+                })
+                .collect();
 
             let entry = Entry {
                 name_offset: *string_offsets.get(&temp_entry.name).unwrap(),
                 property_count: entry_properties.len() as u16,
                 child_count: temp_entry.child_count as u16,
                 property_start_index,
-                unk1: temp_entry.unk1 as u16,
+                unk1,
                 parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
                 unk2: -1,
             };
@@ -223,6 +243,59 @@ impl From<&XmbFile> for Xmb {
             string_values: Ptr32::new(StringBuffer(string_values)),
             padding1: 0,
             padding2: 0,
+        }
+    }
+}
+
+fn calculate_unk1(flattened_temp_entries: &Vec<XmbEntryTemp>, entry: &XmbEntryTemp) -> usize {
+    // TODO: Create a function to find children?
+    let child_indices: Vec<_> = flattened_temp_entries
+        .iter()
+        .filter(|c| c.parent_index == Some(entry.index))
+        .map(|c| c.index)
+        .collect();
+
+    match child_indices.first() {
+        Some(first_child) => *first_child,
+        None => {
+            // TODO: This case doesn't work for the last child of a node. 
+
+            // Find the next sibling of the parent.
+            // TODO: Avoid unwrap.
+            let grandparent_index = flattened_temp_entries[entry.parent_index.unwrap()]
+                .parent_index
+                .unwrap();
+            let parent_siblings: Vec<_> = flattened_temp_entries
+                .iter()
+                .filter(|c| c.parent_index == Some(grandparent_index))
+                .collect();
+
+            let parent_sibling_index = parent_siblings
+                .iter()
+                .position(|s| s.index == entry.parent_index.unwrap())
+                .unwrap();
+            let next_sibling = parent_siblings.get(parent_sibling_index + 1);
+            // println!("{} {:?} {:?} {:?}", &entry.index, parent_siblings.iter().map(|c| c.index).collect::<Vec<_>>(), &next_sibling, parent_sibling_index);
+
+            // If the next sibling has children, use the first child.
+            // Otherwise, point past the end of the entries.
+            // TODO: Is this just a recursive case of above?.
+            match next_sibling {
+                Some(next_sibling) => {
+
+                    let child_indices: Vec<_> = flattened_temp_entries
+                        .iter()
+                        .filter(|c| c.parent_index == Some(next_sibling.index))
+                        .map(|c| c.index)
+                        .collect();
+
+                    match child_indices.first() {
+                        Some(first_child) => *first_child,
+                        None => next_sibling.index,
+                    }
+                }
+                None => flattened_temp_entries.len(),
+            }
         }
     }
 }
@@ -339,6 +412,8 @@ mod tests {
     // This tests the necessary format features with substantially smaller test cases.
     use super::*;
     use indexmap::indexmap;
+
+    // TODO: Test Xmb <-> XmbFile
 
     #[test]
     fn xmb_file_to_from_xml() {
