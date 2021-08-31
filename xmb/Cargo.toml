@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 xmb_lib = { path = "../xmb_lib" }
 xmltree = { version = "0.10.3", features = ["attribute-order"] }
+clap = "2.33.3"
