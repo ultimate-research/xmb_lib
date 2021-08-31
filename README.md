@@ -6,7 +6,7 @@ A command line program for converting XMB files to and from XML. The XML output 
 
 ### Usage
 Drag and XMB or XML file onto the executable or specify the input and output files from the command line. The output is optional and defaults to converting XMB to XML and XML to XMB.   
-`xmb.exe <input> [output]`
+`xmb.exe <input> [output]`  
 `xmb.exe model.xmb model.xml`  
 `xmb.exe model.xml`  
 
