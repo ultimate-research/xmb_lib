@@ -9,62 +9,86 @@ use std::{
 
 // TODO: Limit the number of nodes to fall within the appropriate ranges?
 // This is limited by the number of bits for the indices rather than entry count.
+
+// TODO: Document remaining fields.
+
+/// A named node with a collection of named attributes that corresponds to an XML element.
+/// The [parent_index](#structfield.parent_index) can be used to recreate the original tree structure.
 #[derive(BinRead, Debug, SsbhWrite)]
 pub struct Entry {
     pub name_offset: u32,
-    pub property_count: u16,
+    pub attribute_count: u16,
     pub child_count: u16,
-    pub property_start_index: i16,
-    pub unk1: u16, // TODO: first child index or start of next child group
+    pub attribute_start_index: i16,
+    pub unk1: u16, // TODO: Is there a name for this traversal?
+    /// The index of the parent [Entry] in [entries](struct.Xmb.html#structfield.entries) or `-1` if there is no parent.
     pub parent_index: i16,
     pub unk2: i16, // always -1?
 }
 
+/// A key value pair that corresponds to an XML attribute.
+/// # Examples
+/// The `value_offset` would be the offset of `"eff_elec01"` in the string values section.
+/**
+```xml
+<entry id="eff_elec01"/>
+```
+ */
 #[derive(BinRead, Debug, SsbhWrite)]
-pub struct Property {
+pub struct Attribute {
     pub name_offset: u32,
     pub value_offset: u32,
 }
 
-// TODO: This is probably an entityreference since XMB files with mapped entries define an id.
-// TODO: Does this add a reference to value_offset to the entry at index unk_index?
-// TODO: Add an idref attribute or create a new node?
+/// An element of the `"id"` attribute lookup for an [Entry].
+/// # Examples
+/**
+```xml
+<entry id="eff_elec01"/>
+```
+ */
 #[derive(BinRead, Debug, SsbhWrite)]
 pub struct MappedEntry {
+    /// The offset in [string_values](struct.Xmb.html#structfield.string_values) for the `"id"` value.
     pub value_offset: u32,
-    pub unk_index: u32, // parent entry?
+    /// The index of the corresponding [Entry] in [entries](struct.Xmb.html#structfield.entries).
+    pub entry_index: u32,
 }
 
 // TODO: bigendian if node_count has FF000000 > 0?
+
+/// A flattened tree of named nodes with each node containing a collection of named attributes.
+/// This corresponds to an XML document.
 #[derive(BinRead, Debug, SsbhWrite)]
 #[br(magic = b"XMB ")]
 #[ssbhwrite(align_after = 4)]
 pub struct Xmb {
     pub entry_count: u32,
-    pub property_count: u32,
+    pub attribute_count: u32,
     pub string_count: u32,
     pub mapped_entry_count: u32,
 
-    // TODO: Use this to cache the string lookups (names only)?
-    // TODO: This seems to be all the names in the string buffer, not including values.
+    /// Offsets for the values in [string_values](struct.Xmb.html#structfield.string_values) sorted alphabetically.
     #[br(count = string_count)]
     pub string_offsets: Ptr32<Vec<u32>>, // sorted in alphabetical order by string
 
+    /// A flattened list of entries.
     #[br(count = entry_count)]
     pub entries: Ptr32<Vec<Entry>>,
 
-    #[br(count = property_count)]
-    pub properties: Ptr32<Vec<Property>>,
+    /// A combined collection of all [Entry] attributes.
+    #[br(count = attribute_count)]
+    pub attributes: Ptr32<Vec<Attribute>>,
 
-    // TODO: These values are sorted alphabetically.
-    // This is likely just some sort of lookup.
+    /// A lookup table for the `"id"` attribute sorted alphabetically by value.
     #[br(count = mapped_entry_count)]
     pub mapped_entries: Ptr32<Vec<MappedEntry>>,
 
+    /// Unique values for [Entry] and [Attribute] names.
     #[br(count = string_count)]
     pub string_names: Ptr32<StringBuffer>,
 
-    // TODO: Not specifying count is a confusing way to specify read to eof.
+    /// Unique values for [Attribute] values.
     pub string_values: Ptr32<StringBuffer>,
 
     // TODO: add align_after support per field for SsbhWrite

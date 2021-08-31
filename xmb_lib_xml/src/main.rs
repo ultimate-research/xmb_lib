@@ -38,6 +38,7 @@ fn main() {
                 // println!();
             }
 
+            // TODO: Just append xmb instead of adding .out?
             let output = PathBuf::from(input).with_extension("out.xmb");
             xmb.write_to_file(output).unwrap();
         }
@@ -75,6 +76,7 @@ fn main() {
             element.write_with_config(&mut writer, config).unwrap();
         
             // Write the xml.
+            // TODO: Just append xml instead of adding .out?
             let output = PathBuf::from(input).with_extension("out.xml");
             let mut output_file = std::fs::File::create(output).unwrap();
             output_file.write_all(writer.get_mut()).unwrap();

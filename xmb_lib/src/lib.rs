@@ -22,7 +22,6 @@ pub struct XmbFileEntry {
     pub name: String,
     pub attributes: IndexMap<String, String>,
     pub children: Vec<XmbFileEntry>,
-    pub mapped_children: Vec<XmbFileEntry>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -33,6 +32,8 @@ pub struct XmbFile {
 impl XmbFile {
     pub fn to_xml(&self) -> Element {
         // TODO: Don't assume this is the root entry or that there is a single root?
+        // TODO: XML doesn't technically support multiple root nodes.
+        // TODO: Return an error on failure?
         let entry = &self.entries[0];
         create_element_recursive(self, entry)
     }
@@ -59,8 +60,6 @@ fn create_entry_from_xml_recursive(xml_node: &Element) -> XmbFileEntry {
         name: xml_node.name.clone(),
         attributes: xml_node.attributes.clone(),
         children,
-        // TODO: How to handle mapped entries?
-        mapped_children: Vec::new(),
     }
 }
 
@@ -176,24 +175,45 @@ impl From<&XmbFile> for Xmb {
             string_values.push((offset, get_null_string(value.as_bytes())));
         }
 
-        // Collect entries and properties.
-        let mut properties = Vec::new();
+        // Collect all entries and attributes.
+        let mut attributes = Vec::new();
+        // TODO: Mapped entries.
+
+        // 1. Collect strings for id attributes and corresponding node indices.
+        let mut entry_index_by_id = BTreeMap::new();
+        for (i, temp_entry) in flattened_temp_entries.iter().enumerate() {
+            // Assume only the "id" attribute is used for lookups.
+            // This seems to be the case for Smash Ultimate and Smash 4.
+            let id_value = temp_entry
+                .attributes
+                .iter()
+                .find(|(k, _v)| k == "id")
+                .map(|(_k, v)| v);
+
+            if let Some(id_value) = id_value {
+                entry_index_by_id.insert(id_value, i);
+            }
+        }
+
+        let mapped_entries: Vec<_> = entry_index_by_id.iter().map(|(id_value, entry_index)| MappedEntry {
+            value_offset: *values_offsets.get(*id_value).unwrap(),
+            entry_index: *entry_index as u32,
+        }).collect();
 
         let mut entries = Vec::new();
         for temp_entry in &flattened_temp_entries {
-            // TODO: Rename properties to attributes?
-            let property_start_index = if temp_entry.attributes.is_empty() {
+            let attribute_start_index = if temp_entry.attributes.is_empty() {
                 -1
             } else {
-                properties.len() as i16
+                attributes.len() as i16
             };
 
             let unk1 = calculate_unk1(temp_entry, &flattened_temp_entries) as u16;
 
-            let entry_properties: Vec<_> = temp_entry
+            let entry_attributes: Vec<_> = temp_entry
                 .attributes
                 .iter()
-                .map(|(k, v)| Property {
+                .map(|(k, v)| Attribute {
                     name_offset: *string_offsets.get(k).unwrap(),
                     value_offset: *values_offsets.get(v).unwrap(),
                 })
@@ -201,29 +221,26 @@ impl From<&XmbFile> for Xmb {
 
             let entry = Entry {
                 name_offset: *string_offsets.get(&temp_entry.name).unwrap(),
-                property_count: entry_properties.len() as u16,
+                attribute_count: entry_attributes.len() as u16,
                 child_count: temp_entry.child_count as u16,
-                property_start_index,
+                attribute_start_index,
                 unk1,
                 parent_index: temp_entry.parent_index.map(|i| i as i16).unwrap_or(-1),
                 unk2: -1,
             };
             entries.push(entry);
 
-            properties.extend(entry_properties);
+            attributes.extend(entry_attributes);
         }
-
-        // TODO: Mapped entries.
-        let mapped_entries = Vec::new();
 
         Self {
             entry_count: entries.len() as u32,
-            property_count: properties.len() as u32,
+            attribute_count: attributes.len() as u32,
             string_count: string_offsets.len() as u32,
             mapped_entry_count: mapped_entries.len() as u32,
             string_offsets: Ptr32::new(string_offsets.values().map(|v| *v).collect()),
             entries: Ptr32::new(entries),
-            properties: Ptr32::new(properties),
+            attributes: Ptr32::new(attributes),
             mapped_entries: Ptr32::new(mapped_entries),
             string_names: Ptr32::new(StringBuffer(string_names)),
             string_values: Ptr32::new(StringBuffer(string_values)),
@@ -319,7 +336,6 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
     let children: Vec<_> = entry
         .children
         .iter()
-        .chain(entry.mapped_children.iter())
         .map(|e| XMLNode::Element(create_element_recursive(xmb, e)))
         .collect();
 
@@ -334,14 +350,14 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
 }
 
 fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> IndexMap<String, String> {
-    (0..entry.property_count)
+    (0..entry.attribute_count)
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
             // TODO: Start index doesn't seem to work for effect_locator.xmb files?
-            let property_index = (entry.property_start_index as u16 + i) as usize;
-            let property = &xmb_data.properties.as_ref().unwrap()[property_index];
-            let key = xmb_data.read_name(property.name_offset).unwrap();
-            let value = xmb_data.read_value(property.value_offset).unwrap();
+            let attribute_index = (entry.attribute_start_index as u16 + i) as usize;
+            let attribute = &xmb_data.attributes.as_ref().unwrap()[attribute_index];
+            let key = xmb_data.read_name(attribute.name_offset).unwrap();
+            let value = xmb_data.read_value(attribute.value_offset).unwrap();
             (key, value)
         })
         .collect()
@@ -364,33 +380,10 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
         .map(|(i, e)| create_children_recursive(xmb_data, e, *i as i16))
         .collect();
 
-    let mapped_children: Vec<_> = xmb_data
-        .mapped_entries
-        .as_ref()
-        .unwrap()
-        .iter()
-        .filter(|e| e.unk_index as i16 == entry_index)
-        .map(|e| {
-            let mut attributes = IndexMap::new();
-            attributes.insert(
-                "id".to_string(),
-                xmb_data.read_value(e.value_offset).unwrap(),
-            );
-
-            XmbFileEntry {
-                name: "mapped_entry".to_string(),
-                attributes,
-                children: Vec::new(),
-                mapped_children: Vec::new(),
-            }
-        })
-        .collect();
-
     XmbFileEntry {
         name: xmb_data.read_name(entry.name_offset).unwrap(),
         attributes: get_attributes(xmb_data, entry),
         children,
-        mapped_children,
     }
 }
 
@@ -460,18 +453,14 @@ mod tests {
                                     "e".into() => "f".into()
                                 ],
                                 children: Vec::new(),
-                                mapped_children: Vec::new()
                             }],
-                            mapped_children: Vec::new()
                         },
                         XmbFileEntry {
                             name: "child2".into(),
                             attributes: indexmap!["a".into() => "5".into(), "b".into() => "6".into()],
                             children: Vec::new(),
-                            mapped_children: Vec::new()
                         }
                     ],
-                    mapped_children: Vec::new()
                 }]
             },
             xmb_file
