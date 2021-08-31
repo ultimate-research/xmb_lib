@@ -133,16 +133,7 @@ impl From<&XmbFile> for Xmb {
         let mut flattened_temp_entries = Vec::new();
         add_temp_entries_recursive(&xmb_file.entries, &mut flattened_temp_entries, None);
 
-        // Calculate unk1 for each entry.
-        for entry in &flattened_temp_entries {
-            let unk1 = calculate_unk1(&flattened_temp_entries, entry);
-
-            // println!("{} : -> {}", entry.index, unk1);
-        }
-
-        // TODO: Just calculate unk1 here?
-
-        // 1. Collect the entry names and attribute names and sort alphabetically?
+        // Collect unique names and values as they appear in the flattened entries.
         // TODO: This can also initialize the offsets and string buffers.
         // TODO: Is this used for some sort of lookup?
         let mut names = IndexSet::new();
@@ -155,11 +146,10 @@ impl From<&XmbFile> for Xmb {
             }
         }
 
-        // 2. Use these names to initialize the offsets.
+        // Use these names to initialize the offsets.
         // It makes sense to make the buffers and offsets at the same time.
         // This avoids relying on string length.
         // TODO: Avoid unwrap.
-        // TODO: How to sort the string_offsets alphabetically by string?
         let mut string_offsets = BTreeMap::new();
         let mut names_buffer = Cursor::new(Vec::new());
         let mut string_names = Vec::new();
@@ -186,11 +176,7 @@ impl From<&XmbFile> for Xmb {
             string_values.push((offset, get_null_string(value.as_bytes())));
         }
 
-        // TODO: Add the value strings.
-        // The string buffer seems to just use the order of appearance while only including unique values.
-        // i.e. entry 1 name -> attribute 1 name ->  attribute 2 name -> entry 2 name -> ...
-        // similar for attribute values
-
+        // Collect entries and properties.
         let mut properties = Vec::new();
 
         let mut entries = Vec::new();
@@ -202,7 +188,7 @@ impl From<&XmbFile> for Xmb {
                 properties.len() as i16
             };
 
-            let unk1 = calculate_unk1(&flattened_temp_entries, temp_entry) as u16;
+            let unk1 = calculate_unk1(temp_entry, &flattened_temp_entries) as u16;
 
             let entry_properties: Vec<_> = temp_entry
                 .attributes
@@ -247,7 +233,7 @@ impl From<&XmbFile> for Xmb {
     }
 }
 
-fn calculate_unk1(flattened_temp_entries: &Vec<XmbEntryTemp>, entry: &XmbEntryTemp) -> usize {
+fn calculate_unk1(entry: &XmbEntryTemp, flattened_temp_entries: &[XmbEntryTemp]) -> usize {
     // TODO: Create a function to find children?
     let child_indices: Vec<_> = flattened_temp_entries
         .iter()
@@ -258,46 +244,74 @@ fn calculate_unk1(flattened_temp_entries: &Vec<XmbEntryTemp>, entry: &XmbEntryTe
     match child_indices.first() {
         Some(first_child) => *first_child,
         None => {
-            // TODO: This case doesn't work for the last child of a node. 
-
-            // Find the next sibling of the parent.
-            // TODO: Avoid unwrap.
-            let grandparent_index = flattened_temp_entries[entry.parent_index.unwrap()]
-                .parent_index
-                .unwrap();
-            let parent_siblings: Vec<_> = flattened_temp_entries
-                .iter()
-                .filter(|c| c.parent_index == Some(grandparent_index))
-                .collect();
-
-            let parent_sibling_index = parent_siblings
-                .iter()
-                .position(|s| s.index == entry.parent_index.unwrap())
-                .unwrap();
-            let next_sibling = parent_siblings.get(parent_sibling_index + 1);
-            // println!("{} {:?} {:?} {:?}", &entry.index, parent_siblings.iter().map(|c| c.index).collect::<Vec<_>>(), &next_sibling, parent_sibling_index);
-
-            // If the next sibling has children, use the first child.
-            // Otherwise, point past the end of the entries.
-            // TODO: Is this just a recursive case of above?.
-            match next_sibling {
-                Some(next_sibling) => {
-
-                    let child_indices: Vec<_> = flattened_temp_entries
-                        .iter()
-                        .filter(|c| c.parent_index == Some(next_sibling.index))
-                        .map(|c| c.index)
-                        .collect();
-
-                    match child_indices.first() {
-                        Some(first_child) => *first_child,
-                        None => next_sibling.index,
-                    }
-                }
-                None => flattened_temp_entries.len(),
-            }
+            let parent = find_parent(entry, flattened_temp_entries);
+            calculate_unk1_leaf(parent, flattened_temp_entries)
+                .unwrap_or(flattened_temp_entries.len())
         }
     }
+}
+
+fn calculate_unk1_leaf(
+    entry: Option<&XmbEntryTemp>,
+    flattened_temp_entries: &[XmbEntryTemp],
+) -> Option<usize> {
+    // Cover the base case by returning None if there is no parent.
+    // For the rightmost node at the leaf level, this will traverse up the tree.
+    // The root nodes have no parent and will return None.
+    let entry = entry?;
+    let parent = find_parent(entry, flattened_temp_entries)?;
+
+    let next_sibling = find_next_sibling(entry, parent, flattened_temp_entries);
+
+    // Use the first child of the parent's next sibling.
+    // If this doesn't work, recurse up the tree.
+    match next_sibling {
+        Some(next_sibling) => {
+            // TODO: Reuse this find children function?
+            let child_indices: Vec<_> = flattened_temp_entries
+                .iter()
+                .filter(|c| c.parent_index == Some(next_sibling.index))
+                .map(|c| c.index)
+                .collect();
+
+            match child_indices.first() {
+                Some(first_child) => Some(*first_child),
+                None => calculate_unk1_leaf(Some(parent), flattened_temp_entries),
+            }
+        }
+        None => calculate_unk1_leaf(Some(parent), flattened_temp_entries),
+    }
+}
+
+// TODO: These can be methods on XmbEntryTemp.
+fn find_parent<'a>(
+    entry: &'a XmbEntryTemp,
+    flattened_temp_entries: &'a [XmbEntryTemp],
+) -> Option<&'a XmbEntryTemp> {
+    entry
+        .parent_index
+        .map(|i| flattened_temp_entries.get(i))
+        .flatten()
+}
+
+fn find_next_sibling<'a>(
+    entry: &'a XmbEntryTemp,
+    parent: &'a XmbEntryTemp,
+    flattened_temp_entries: &'a [XmbEntryTemp],
+) -> Option<&'a XmbEntryTemp> {
+    let parent_index = parent.index;
+
+    let siblings: Vec<_> = flattened_temp_entries
+        .iter()
+        .filter(|c| c.parent_index == Some(parent_index))
+        .collect();
+
+    let sibling_index = siblings
+        .iter()
+        .position(|s| s.index == entry.index)
+        .unwrap();
+
+    siblings.get(sibling_index + 1).map(|e| *e)
 }
 
 fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
