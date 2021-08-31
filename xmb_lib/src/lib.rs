@@ -208,7 +208,7 @@ impl From<&XmbFile> for Xmb {
                 attributes.len() as i16
             };
 
-            let unk1 = calculate_unk1(temp_entry, &flattened_temp_entries) as u16;
+            let unk1 = calculate_unk1(temp_entry, &flattened_temp_entries) as i16;
 
             let entry_attributes: Vec<_> = temp_entry
                 .attributes
@@ -276,9 +276,14 @@ fn calculate_unk1_leaf(
     // For the rightmost node at the leaf level, this will traverse up the tree.
     // The root nodes have no parent and will return None.
     let entry = entry?;
-    let parent = find_parent(entry, flattened_temp_entries)?;
 
+    // TODO: This shouldn't return early?
+    let parent = find_parent(entry, flattened_temp_entries)?;
+    
+    // For some leaf nodes, this instead looks at the next sibling leaf with children.
     let next_sibling = find_next_sibling(entry, parent, flattened_temp_entries);
+
+    // TODO: There's a case for some lod.xmb files where this should return -1?
 
     // Use the first child of the parent's next sibling.
     // If this doesn't work, recurse up the tree.

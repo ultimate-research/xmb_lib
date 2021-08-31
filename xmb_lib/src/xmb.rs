@@ -20,7 +20,7 @@ pub struct Entry {
     pub attribute_count: u16,
     pub child_count: u16,
     pub attribute_start_index: i16,
-    pub unk1: u16, // TODO: Is there a name for this traversal?
+    pub unk1: i16, // TODO: Is there a name for this traversal?
     /// The index of the parent [Entry] in [entries](struct.Xmb.html#structfield.entries) or `-1` if there is no parent.
     pub parent_index: i16,
     pub unk2: i16, // always -1?

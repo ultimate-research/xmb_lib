@@ -1,2 +1,2 @@
 [workspace]
-members = [ "xmb_lib", "xmb_lib_xml" ]
+members = [ "xmb_lib", "xmb" ]

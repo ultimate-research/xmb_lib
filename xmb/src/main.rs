@@ -31,9 +31,11 @@ fn main() {
                 // println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
                 // println!("{:?} {:?}", i, entry.unk1);
 
-                if entry.unk1 < xmb.entry_count as u16 {
+                if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
                     let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
                     println!("{} : {} -> {} : {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1, xmb.read_name(next_node.name_offset).unwrap());
+                } else {
+                    println!("{} : {} -> {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1);
                 }
                 // println!();
             }
@@ -57,9 +59,11 @@ fn main() {
                 // println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
                 // println!("{:?} {:?}", i, entry.unk1);
 
-                if entry.unk1  < xmb.entry_count as u16 {
+                if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
                     let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
                     println!("{} : {} -> {} : {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1, xmb.read_name(next_node.name_offset).unwrap());
+                } else {
+                    println!("{} : {} -> {}", i, xmb.read_name(entry.name_offset).unwrap(), entry.unk1);
                 }
                 // println!();
             }
