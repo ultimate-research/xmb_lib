@@ -177,8 +177,8 @@ impl BinRead for StringBuffer {
             // The names buffer has a specified string count.
             let mut buffer_reader = Cursor::new(buffer);
             loop {
-                let relative_offset = (&mut buffer_reader).stream_position()?;
-                if relative_offset as usize >= (&mut buffer_reader).get_ref().len() {
+                let relative_offset = buffer_reader.stream_position()?;
+                if relative_offset as usize >= buffer_reader.get_ref().len() {
                     break;
                 }
                 let byte_result: Result<Vec<u8>, _> = (&mut buffer_reader)

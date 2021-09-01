@@ -46,8 +46,8 @@ fn main() {
             // Ex: model.xmb.xml -> model.xmb.xmb.
             let output = matches
                 .value_of("output")
-                .map(|o| PathBuf::from(o))
-                .unwrap_or(PathBuf::from(input).with_extension("xmb"));
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(input).with_extension("xmb"));
 
             match output.extension().unwrap().to_str().unwrap() {
                 "xmb" => xmb.write_to_file(output).unwrap(),
@@ -62,8 +62,8 @@ fn main() {
             // Ex: model.xmb -> model.xmb.xml.
             let output = matches
                 .value_of("output")
-                .map(|o| PathBuf::from(o))
-                .unwrap_or(PathBuf::from(input.to_string() + ".xml"));
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(input.to_string() + ".xml"));
 
             match output.extension().unwrap().to_str().unwrap() {
                 "xmb" => xmb.write_to_file(output).unwrap(),

@@ -241,7 +241,7 @@ impl From<&XmbFile> for Xmb {
             attribute_count: attributes.len() as u32,
             string_count: string_offsets.len() as u32,
             mapped_entry_count: mapped_entries.len() as u32,
-            string_offsets: Ptr32::new(string_offsets.values().map(|v| *v).collect()),
+            string_offsets: Ptr32::new(string_offsets.values().copied().collect()),
             entries: Ptr32::new(entries),
             attributes: Ptr32::new(attributes),
             mapped_entries: Ptr32::new(mapped_entries),
@@ -285,7 +285,6 @@ fn calculate_unk1_leaf(
     // TODO: It might be simpler to just match on find_next_sibling for parent.
     match find_parent(parent, flattened_temp_entries) {
         Some(grand_parent) => {
-
             let next_sibling = find_next_sibling(parent, flattened_temp_entries);
 
             // TODO: There's a case for some lod.xmb files where this can return -1?
@@ -314,7 +313,7 @@ fn calculate_unk1_leaf(
         None => {
             // It's possible for only some of a node's children to be leaves (no children).
             // This case comes up in some model.xmb files.
-            let next_sibling = find_next_sibling_with_children(entry, &flattened_temp_entries);
+            let next_sibling = find_next_sibling_with_children(entry, flattened_temp_entries);
             next_sibling.map(|s| s.index)
         }
     }
@@ -347,7 +346,7 @@ fn find_next_sibling<'a>(
         .position(|s| s.index == entry.index)
         .unwrap();
 
-    siblings.get(sibling_index + 1).map(|e| *e)
+    siblings.get(sibling_index + 1).copied()
 }
 
 fn find_next_sibling_with_children<'a>(
@@ -444,7 +443,7 @@ fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
         .iter()
         .enumerate()
         .filter(|(_, e)| e.parent_index == -1)
-        .map(|(i, e)| create_children_recursive(&xmb_data, e, i as i16))
+        .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
         .collect();
 
     XmbFile { entries: roots }
