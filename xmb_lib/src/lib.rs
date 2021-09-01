@@ -124,6 +124,7 @@ fn get_null_string(bytes: &[u8]) -> NullString {
 }
 
 // TODO: Find a way to test this conversion.
+// TODO: This should be try_from or it's own method.
 impl From<&XmbFile> for Xmb {
     fn from(xmb_file: &XmbFile) -> Self {
         // TODO: This could be more efficient by owning the XmbFile to avoid copying strings.
@@ -177,9 +178,8 @@ impl From<&XmbFile> for Xmb {
 
         // Collect all entries and attributes.
         let mut attributes = Vec::new();
-        // TODO: Mapped entries.
 
-        // 1. Collect strings for id attributes and corresponding node indices.
+        // Collect strings for id attributes and corresponding node indices.
         let mut entry_index_by_id = BTreeMap::new();
         for (i, temp_entry) in flattened_temp_entries.iter().enumerate() {
             // Assume only the "id" attribute is used for lookups.
@@ -399,7 +399,6 @@ fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> IndexMap<String, String> {
     (0..entry.attribute_count)
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
-            // TODO: Start index doesn't seem to work for effect_locator.xmb files?
             let attribute_index = (entry.attribute_start_index as u16 + i) as usize;
             let attribute = &xmb_data.attributes.as_ref().unwrap()[attribute_index];
             let key = xmb_data.read_name(attribute.name_offset).unwrap();
