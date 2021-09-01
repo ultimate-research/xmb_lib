@@ -5,6 +5,7 @@ A Rust library for reading and writing XMB files. These files are used by Smash 
 A command line program for converting XMB files to and from XML. The XML output uses the same XML format as the Python script for SSBU-Tools. For a list of files that don't rebuild correctly, see https://github.com/ultimate-research/xmb_lib/issues/8.
 
 ### Usage
+A prebuilt binary for Windows is available in [releases](https://github.com/ultimate-research/xmb_lib/releases).  
 Drag and XMB or XML file onto the executable or specify the input and output files from the command line. The output is optional and defaults to converting XMB to XML and XML to XMB.   
 `xmb.exe <input> [output]`  
 `xmb.exe model.xmb model.xml`  
