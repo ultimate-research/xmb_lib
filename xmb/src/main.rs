@@ -26,27 +26,28 @@ fn main() {
                 .index(2)
                 .short("o")
                 .long("output")
-                .help("The output XML, XMB, or dot file")
+                .help("The output XML, XMB, or dot (graphviz) file")
                 .required(false)
                 .takes_value(true),
         )
         .get_matches();
 
-    let input = Path::new(matches.value_of("input").unwrap());
+    let input = matches.value_of("input").unwrap();
 
     // TODO: Clean this up.
-    match input.extension().unwrap().to_str().unwrap() {
+    match PathBuf::from(&input).extension().unwrap().to_str().unwrap() {
         "xml" => {
             let xml_text = std::io::Cursor::new(std::fs::read(input).unwrap());
             let element = Element::parse(xml_text).unwrap();
             let xmb_file = XmbFile::from_xml(&element);
             let xmb = Xmb::from(&xmb_file);
 
-            // TODO: Just append xmb instead of adding .out?
+            // Replace the xml extension.
+            // Ex: model.xmb.xml -> model.xmb.xmb.
             let output = matches
                 .value_of("output")
                 .map(|o| PathBuf::from(o))
-                .unwrap_or(PathBuf::from(input).with_extension("out.xmb"));
+                .unwrap_or(PathBuf::from(input).with_extension("xmb"));
 
             match output.extension().unwrap().to_str().unwrap() {
                 "xmb" => xmb.write_to_file(output).unwrap(),
@@ -57,10 +58,12 @@ fn main() {
         "xmb" => {
             let xmb = Xmb::from_file(input).unwrap();
 
+            // Append .xml to the existing file to avoid overwriting existing files.
+            // Ex: model.xmb -> model.xmb.xml.
             let output = matches
                 .value_of("output")
                 .map(|o| PathBuf::from(o))
-                .unwrap_or(PathBuf::from(input).with_extension("out.xml"));
+                .unwrap_or(PathBuf::from(input.to_string() + ".xml"));
 
             match output.extension().unwrap().to_str().unwrap() {
                 "xmb" => xmb.write_to_file(output).unwrap(),
