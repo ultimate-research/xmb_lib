@@ -1,5 +1,4 @@
 use clap::{App, Arg};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use xmb_lib::xmb::Xmb;
 use xmb_lib::XmbFile;
@@ -40,30 +39,7 @@ fn main() {
             let xmb_file = XmbFile::from_xml(&element);
             let xmb = Xmb::from(&xmb_file);
 
-            for (i, entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
-                println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
-            }
-            println!();
-
-            for (i, entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
-                if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
-                    let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
-                    println!(
-                        "{} : {} -> {} : {}",
-                        i,
-                        xmb.read_name(entry.name_offset).unwrap(),
-                        entry.unk1,
-                        xmb.read_name(next_node.name_offset).unwrap()
-                    );
-                } else {
-                    println!(
-                        "{} : {} -> {}",
-                        i,
-                        xmb.read_name(entry.name_offset).unwrap(),
-                        entry.unk1
-                    );
-                }
-            }
+            print_tree(&xmb);
 
             // TODO: Just append xmb instead of adding .out?
             let output = matches
@@ -76,30 +52,7 @@ fn main() {
             let xmb = Xmb::from_file(input).unwrap();
             let xmb_file = XmbFile::from(&xmb);
 
-            for (i, entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
-                println!("{:?}: {:?}", i, xmb.read_name(entry.name_offset).unwrap());
-            }
-            println!();
-
-            for (i, entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
-                if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
-                    let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
-                    println!(
-                        "{} : {} -> {} : {}",
-                        i,
-                        xmb.read_name(entry.name_offset).unwrap(),
-                        entry.unk1,
-                        xmb.read_name(next_node.name_offset).unwrap()
-                    );
-                } else {
-                    println!(
-                        "{} : {} -> {}",
-                        i,
-                        xmb.read_name(entry.name_offset).unwrap(),
-                        entry.unk1
-                    );
-                }
-            }
+            print_tree(&xmb);
 
             let element = xmb_file.to_xml();
 
@@ -120,4 +73,55 @@ fn main() {
         }
         _ => panic!("Unsupported extension"),
     }
+}
+
+fn print_tree(xmb: &Xmb) {
+    // Print the tree structure for use with graphviz and the dot engine.
+    // The output can be visualized here: https://edotor.net/
+    println!("digraph G {{");
+    println!("graph [ranksep=2];");
+    for (i, entry) in xmb.entries.as_ref().unwrap().iter().enumerate() {
+        // Add an edge from parent to child.
+        if entry.parent_index != -1 {
+            if let Some(parent) = xmb
+                .entries
+                .as_ref()
+                .unwrap()
+                .get(entry.parent_index as usize)
+            {
+                // Avoid adding duplicate edges.
+                // if parent.unk1 != i as i16 {
+                    println!(
+                        r#""{}: {}" -> "{}: {}""#,
+                        entry.parent_index,
+                        xmb.read_name(parent.name_offset).unwrap(),
+                        i,
+                        xmb.read_name(entry.name_offset).unwrap()
+                    );
+                // }
+
+            }
+        }
+
+        // Add the unk1 edges in a different color.
+        if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
+            let next_node = &xmb.entries.as_ref().unwrap()[entry.unk1 as usize];
+            println!(
+                r#""{}: {}" -> "{}: {}" [color=blue]"#,
+                i,
+                xmb.read_name(entry.name_offset).unwrap(),
+                entry.unk1,
+                xmb.read_name(next_node.name_offset).unwrap()
+            );
+        } else {
+            println!(
+                r#""{}: {}" -> "{}" [color=blue]"#,
+                i,
+                xmb.read_name(entry.name_offset).unwrap(),
+                entry.unk1
+            );
+        }
+    }
+
+    println!("}}");
 }

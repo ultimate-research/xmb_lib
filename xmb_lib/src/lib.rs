@@ -195,10 +195,13 @@ impl From<&XmbFile> for Xmb {
             }
         }
 
-        let mapped_entries: Vec<_> = entry_index_by_id.iter().map(|(id_value, entry_index)| MappedEntry {
-            value_offset: *values_offsets.get(*id_value).unwrap(),
-            entry_index: *entry_index as u32,
-        }).collect();
+        let mapped_entries: Vec<_> = entry_index_by_id
+            .iter()
+            .map(|(id_value, entry_index)| MappedEntry {
+                value_offset: *values_offsets.get(*id_value).unwrap(),
+                entry_index: *entry_index as u32,
+            })
+            .collect();
 
         let mut entries = Vec::new();
         for temp_entry in &flattened_temp_entries {
@@ -250,6 +253,7 @@ impl From<&XmbFile> for Xmb {
     }
 }
 
+// TODO: This is probably not the simplest or most efficient way to write this.
 fn calculate_unk1(entry: &XmbEntryTemp, flattened_temp_entries: &[XmbEntryTemp]) -> usize {
     // TODO: Create a function to find children?
     let child_indices: Vec<_> = flattened_temp_entries
@@ -262,46 +266,57 @@ fn calculate_unk1(entry: &XmbEntryTemp, flattened_temp_entries: &[XmbEntryTemp])
         Some(first_child) => *first_child,
         None => {
             let parent = find_parent(entry, flattened_temp_entries);
-            calculate_unk1_leaf(parent, flattened_temp_entries)
+            calculate_unk1_leaf(entry, parent, flattened_temp_entries)
                 .unwrap_or(flattened_temp_entries.len())
         }
     }
 }
 
 fn calculate_unk1_leaf(
-    entry: Option<&XmbEntryTemp>,
+    entry: &XmbEntryTemp,
+    parent: Option<&XmbEntryTemp>,
     flattened_temp_entries: &[XmbEntryTemp],
 ) -> Option<usize> {
     // Cover the base case by returning None if there is no parent.
     // For the rightmost node at the leaf level, this will traverse up the tree.
-    // The root nodes have no parent and will return None.
-    let entry = entry?;
+    // The root node has no parent and will return None.
+    let parent = parent?;
 
-    // TODO: This shouldn't return early?
-    let parent = find_parent(entry, flattened_temp_entries)?;
-    
-    // For some leaf nodes, this instead looks at the next sibling leaf with children.
-    let next_sibling = find_next_sibling(entry, parent, flattened_temp_entries);
+    // TODO: It might be simpler to just match on find_next_sibling for parent.
+    match find_parent(parent, flattened_temp_entries) {
+        Some(grand_parent) => {
 
-    // TODO: There's a case for some lod.xmb files where this should return -1?
+            let next_sibling = find_next_sibling(parent, flattened_temp_entries);
 
-    // Use the first child of the parent's next sibling.
-    // If this doesn't work, recurse up the tree.
-    match next_sibling {
-        Some(next_sibling) => {
-            // TODO: Reuse this find children function?
-            let child_indices: Vec<_> = flattened_temp_entries
-                .iter()
-                .filter(|c| c.parent_index == Some(next_sibling.index))
-                .map(|c| c.index)
-                .collect();
+            // TODO: There's a case for some lod.xmb files where this can return -1?
 
-            match child_indices.first() {
-                Some(first_child) => Some(*first_child),
-                None => calculate_unk1_leaf(Some(parent), flattened_temp_entries),
+            // Use the first child of the parent's next sibling.
+            // If this doesn't work, recurse up the tree.
+            match next_sibling {
+                Some(next_sibling) => {
+                    // TODO: Reuse this find children function?
+                    let child_indices: Vec<_> = flattened_temp_entries
+                        .iter()
+                        .filter(|c| c.parent_index == Some(next_sibling.index))
+                        .map(|c| c.index)
+                        .collect();
+
+                    match child_indices.first() {
+                        Some(first_child) => Some(*first_child),
+                        None => {
+                            calculate_unk1_leaf(entry, Some(grand_parent), flattened_temp_entries)
+                        }
+                    }
+                }
+                None => calculate_unk1_leaf(entry, Some(grand_parent), flattened_temp_entries),
             }
         }
-        None => calculate_unk1_leaf(Some(parent), flattened_temp_entries),
+        None => {
+            // It's possible for only some of a node's children to be leaves (no children).
+            // This case comes up in some model.xmb files.
+            let next_sibling = find_next_sibling_with_children(entry, &flattened_temp_entries);
+            next_sibling.map(|s| s.index)
+        }
     }
 }
 
@@ -318,10 +333,9 @@ fn find_parent<'a>(
 
 fn find_next_sibling<'a>(
     entry: &'a XmbEntryTemp,
-    parent: &'a XmbEntryTemp,
     flattened_temp_entries: &'a [XmbEntryTemp],
 ) -> Option<&'a XmbEntryTemp> {
-    let parent_index = parent.index;
+    let parent_index = entry.parent_index?;
 
     let siblings: Vec<_> = flattened_temp_entries
         .iter()
@@ -334,6 +348,34 @@ fn find_next_sibling<'a>(
         .unwrap();
 
     siblings.get(sibling_index + 1).map(|e| *e)
+}
+
+fn find_next_sibling_with_children<'a>(
+    entry: &'a XmbEntryTemp,
+    flattened_temp_entries: &'a [XmbEntryTemp],
+) -> Option<&'a XmbEntryTemp> {
+    let parent_index = entry.parent_index?;
+    let siblings: Vec<_> = flattened_temp_entries
+        .iter()
+        .filter(|c| c.parent_index == Some(parent_index))
+        .collect();
+
+    let sibling_index = siblings
+        .iter()
+        .position(|s| s.index == entry.index)
+        .unwrap();
+
+    // Find the first child of the next sibling after the current entry with children.
+    siblings
+        .iter()
+        .skip(sibling_index + 1)
+        .filter_map(|c| {
+            let first_child = flattened_temp_entries
+                .iter()
+                .find(|c1| c1.parent_index == Some(c.index));
+            first_child
+        })
+        .next()
 }
 
 fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
