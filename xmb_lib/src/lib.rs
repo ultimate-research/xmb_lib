@@ -4,6 +4,7 @@ use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
 use std::collections::{BTreeMap, HashMap};
+use std::error::Error;
 use std::fs;
 use std::io::{Seek, Write};
 use std::num::NonZeroU8;
@@ -45,6 +46,14 @@ impl XmbFile {
             entries: vec![root],
         }
     }
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
+        Xmb::from_file(path).map(Into::into)
+    }
+
+    pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
+        Xmb::from(self).write_to_file(path)
+    }
 }
 
 // TODO: All these conversions can use test cases.
@@ -63,7 +72,12 @@ fn create_entry_from_xml_recursive(xml_node: &Element) -> XmbFileEntry {
     }
 }
 
-// TODO: From<XmbFile> for Xmb
+impl From<Xmb> for XmbFile {
+    fn from(xmb: Xmb) -> Self {
+        Self::from(&xmb)
+    }
+}
+
 impl From<&Xmb> for XmbFile {
     fn from(xmb: &Xmb) -> Self {
         xmb_file_from_xmb(xmb)
