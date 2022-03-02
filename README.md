@@ -25,7 +25,7 @@ The example below shows a `model.xmb` file after converting to XML.
 
 ### Usage
 A prebuilt binary for Windows is available in [releases](https://github.com/ultimate-research/xmb_lib/releases).  
-Drag and XMB or XML file onto the executable or specify the input and output files from the command line. The output is optional and defaults to converting XMB to XML and XML to XMB.   
+Drag an XMB or XML file onto the executable or specify the input and output files from the command line. The output is optional and defaults to converting XMB to XML and XML to XMB.   
 `xmb.exe <input> [output]`  
 `xmb.exe model.xmb model.xml`  
 `xmb.exe model.xmb`  
