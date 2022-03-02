@@ -93,8 +93,9 @@ struct XmbEntryTemp {
     index: usize,
 }
 
+// TODO: Is this just BFS order?
 // Create temp types to flatten the list before writing offsets.
-// This avoids leaving structs partially initialized with correct data.
+// This avoids leaving structs partially initialized.
 // TODO: Is there a way to avoid this extra step?
 fn add_temp_entries_recursive(
     children: &[XmbFileEntry],
@@ -194,6 +195,7 @@ impl From<&XmbFile> for Xmb {
         let mut attributes = Vec::new();
 
         // Collect strings for id attributes and corresponding node indices.
+        // The lookup is sorted alphabetically by the "id" value.
         let mut entry_index_by_id = BTreeMap::new();
         for (i, temp_entry) in flattened_temp_entries.iter().enumerate() {
             // Assume only the "id" attribute is used for lookups.
@@ -530,5 +532,59 @@ mod tests {
         assert_eq!(element, output_element);
     }
 
-    // TODO: Test mapped entries?
+    // TODO: Test xmb to xml_file
+    #[test]
+    fn xmb_file_to_xmb() {
+        // TODO: Test mapped entries?
+        let xmb_file = XmbFile {
+            entries: vec![XmbFileEntry {
+                name: "root".into(),
+                attributes: indexmap!["a".into() => "1".into(), "b".into() => "2".into()],
+                children: vec![
+                    XmbFileEntry {
+                        name: "child1".into(),
+                        attributes: indexmap!["id".into() => "id2".into(), "b".into() => "4".into()],
+                        children: vec![XmbFileEntry {
+                            name: "subchild1".into(),
+                            attributes: indexmap![
+                                "c".into() => "7".into(),
+                                "d".into() => "8".into(),
+                                "e".into() => "f".into()
+                            ],
+                            children: Vec::new(),
+                        }],
+                    },
+                    XmbFileEntry {
+                        name: "child2".into(),
+                        attributes: indexmap!["id".into() => "id1".into(), "b".into() => "6".into()],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+
+        // TODO: Use PartialEq for the entries, attributes, etc?
+        let xmb = Xmb::from(&xmb_file);
+
+        assert_eq!(4, xmb.entry_count);
+        let entries = xmb.entries.as_ref().unwrap();
+        assert_eq!(4, entries.len());
+        // TODO: Document this order?
+        assert_eq!(-1, entries[0].parent_index); // root
+        assert_eq!(0, entries[1].parent_index); // child1
+        assert_eq!(0, entries[2].parent_index); // child2
+        assert_eq!(1, entries[3].parent_index); // subchild1
+
+        assert_eq!(9, xmb.attribute_count);
+        assert_eq!(9, xmb.attributes.as_ref().unwrap().len());
+
+        assert_eq!(10, xmb.string_count);
+
+        // child1 and child2 have "id" attributes.
+        // The order is flipped here since the ids are sorted.
+        assert_eq!(2, xmb.mapped_entry_count);
+        let mapped_entries = xmb.mapped_entries.as_ref().unwrap();
+        assert_eq!(2, mapped_entries[0].entry_index);
+        assert_eq!(1, mapped_entries[1].entry_index);
+    }
 }

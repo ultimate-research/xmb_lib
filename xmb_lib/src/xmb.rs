@@ -14,7 +14,7 @@ use std::{
 
 /// A named node with a collection of named attributes that corresponds to an XML element.
 /// The [parent_index](#structfield.parent_index) can be used to recreate the original tree structure.
-#[derive(BinRead, Debug, SsbhWrite)]
+#[derive(Debug, BinRead, SsbhWrite)]
 pub struct Entry {
     pub name_offset: u32,
     pub attribute_count: u16,
@@ -34,7 +34,7 @@ pub struct Entry {
 <entry id="eff_elec01"/>
 ```
  */
-#[derive(BinRead, Debug, SsbhWrite)]
+#[derive(Debug, BinRead, SsbhWrite)]
 pub struct Attribute {
     pub name_offset: u32,
     pub value_offset: u32,
@@ -47,7 +47,7 @@ pub struct Attribute {
 <entry id="eff_elec01"/>
 ```
  */
-#[derive(BinRead, Debug, SsbhWrite)]
+#[derive(Debug, BinRead, SsbhWrite)]
 pub struct MappedEntry {
     /// The offset in [string_values](struct.Xmb.html#structfield.string_values) for the `"id"` value.
     pub value_offset: u32,
@@ -59,7 +59,7 @@ pub struct MappedEntry {
 
 /// A flattened tree of named nodes with each node containing a collection of named attributes.
 /// This corresponds to an XML document.
-#[derive(BinRead, Debug, SsbhWrite)]
+#[derive(Debug, BinRead, SsbhWrite)]
 #[br(magic = b"XMB ")]
 #[ssbhwrite(align_after = 4)]
 pub struct Xmb {
