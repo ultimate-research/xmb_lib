@@ -263,8 +263,6 @@ impl From<&XmbFile> for Xmb {
             mapped_entries: Ptr32::new(mapped_entries),
             string_names: Ptr32::new(StringBuffer(string_names)),
             string_values: Ptr32::new(StringBuffer(string_values)),
-            padding1: 0,
-            padding2: 0,
         }
     }
 }

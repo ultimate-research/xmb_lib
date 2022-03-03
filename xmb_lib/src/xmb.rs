@@ -89,11 +89,8 @@ pub struct Xmb {
     pub string_names: Ptr32<StringBuffer>,
 
     /// Unique values for [Attribute] values.
+    #[ssbhwrite(pad_after = 20)]
     pub string_values: Ptr32<StringBuffer>,
-
-    // TODO: add align_after support per field for SsbhWrite
-    pub padding1: u32,
-    pub padding2: u128, // TODO: Is the header always padded to 64 bytes?
 }
 
 impl Xmb {
