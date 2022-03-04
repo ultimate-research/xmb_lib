@@ -1,12 +1,14 @@
+use arbitrary::Arbitrary;
 use binread::NullString;
 use binread::{io::Cursor, BinReaderExt, BinResult};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 use std::error::Error;
 use std::fs;
 use std::io::{Seek, Write};
+use std::iter::FromIterator;
 use std::num::NonZeroU8;
 use std::path::Path;
 use xmb::*;
@@ -15,9 +17,6 @@ use xmltree::{Element, XMLNode};
 pub mod xmb;
 
 // TODO: Deserialize?
-#[derive(Debug, Serialize)]
-pub struct Attributes(HashMap<String, String>);
-
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct XmbFileEntry {
     pub name: String,
@@ -25,12 +24,23 @@ pub struct XmbFileEntry {
     pub children: Vec<XmbFileEntry>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+impl<'a> Arbitrary<'a> for XmbFileEntry {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            name: u.arbitrary()?,
+            attributes: IndexMap::from_iter(u.arbitrary::<Vec<(String, String)>>()?),
+            children: u.arbitrary()?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq, Arbitrary)]
 pub struct XmbFile {
     pub entries: Vec<XmbFileEntry>,
 }
 
 impl XmbFile {
+    // TODO: Should these return a result?
     pub fn to_xml(&self) -> Element {
         // TODO: Don't assume this is the root entry or that there is a single root?
         // TODO: XML doesn't technically support multiple root nodes.

@@ -1,0 +1,43 @@
+[package]
+name = "xmb_lib-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.xmb_lib]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "xmbfile_xml"
+path = "fuzz_targets/xmbfile_xml.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "xmbfile_to_xmb"
+path = "fuzz_targets/xmbfile_to_xmb.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "xmb_to_xmbfile"
+path = "fuzz_targets/xmb_to_xmbfile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "read_xmb"
+path = "fuzz_targets/read_xmb.rs"
+test = false
+doc = false
