@@ -147,6 +147,23 @@ impl Xmb {
 #[derive(Debug)]
 pub struct StringBuffer(pub Vec<(u64, NullString)>);
 
+// TODO: Use binrw once it's patched.
+//https://github.com/jam1garner/binrw/blob/03f175f99f5a6fd506d016cf1c8c1cff18f030f2/binrw/src/strings.rs#L151-L169
+fn read_null_string<R: Read + Seek>(
+    reader: &mut R,
+    options: &ReadOptions,
+) -> BinResult<NullString> {
+    let mut values = Vec::new();
+
+    loop {
+        let val = <u8>::read_options(reader, options, ())?;
+        if val == 0 {
+            return Ok(NullString(values));
+        }
+        values.push(val);
+    }
+}
+
 impl<'a> Arbitrary<'a> for StringBuffer {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // TODO: Is this a good implementation?
@@ -174,7 +191,7 @@ impl BinRead for StringBuffer {
             let start = reader.stream_position()?;
             for _ in 0..count {
                 let relative_offset = reader.stream_position()? - start;
-                let value: NullString = reader.read_le()?;
+                let value = read_null_string(reader, options)?;
                 values.push((relative_offset, value));
             }
         } else {

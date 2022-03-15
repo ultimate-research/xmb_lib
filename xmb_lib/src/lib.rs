@@ -4,7 +4,7 @@ use binread::{io::Cursor, BinReaderExt, BinResult};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::io::{Seek, Write};
@@ -420,6 +420,7 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
 }
 
 fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> IndexMap<String, String> {
+    // TODO: This should fail if read returns None.
     (0..entry.attribute_count)
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
@@ -449,6 +450,7 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
         .map(|(i, e)| create_children_recursive(xmb_data, e, *i as i16))
         .collect();
 
+    // TODO: This should fail if read_name returns None.
     XmbFileEntry {
         name: xmb_data.read_name(entry.name_offset).unwrap(),
         attributes: get_attributes(xmb_data, entry),
@@ -459,15 +461,19 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
 fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
     // First find the nodes with no parents.
     // Then recursively add their children based on the parent index.
+    // Assume a null pointer just means no entries.
     let roots: Vec<_> = xmb_data
         .entries
         .as_ref()
-        .unwrap()
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| e.parent_index == -1)
-        .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
-        .collect();
+        .map(|entries| {
+            entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.parent_index == -1)
+                .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
+                .collect()
+        })
+        .unwrap_or(Vec::new());
 
     XmbFile { entries: roots }
 }
