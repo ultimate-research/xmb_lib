@@ -1,10 +1,9 @@
 use arbitrary::Arbitrary;
-use binread::{BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
+use binread::{helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
 use std::{
-    io::{Cursor, Read, Seek, Write},
-    num::NonZeroU8,
+    io::{Cursor, Read, Seek, SeekFrom, Write},
     path::Path,
 };
 
@@ -86,32 +85,64 @@ pub struct Xmb {
     pub mapped_entries: Ptr32<Vec<MappedEntry>>,
 
     /// Unique values for [Entry] and [Attribute] names.
-    #[br(count = string_count)]
-    pub string_names: Ptr32<StringBuffer>,
+    #[br(args(string_count))]
+    pub string_names: Ptr32<NamesBuffer>,
 
     /// Unique values for [Attribute] values.
     #[ssbhwrite(pad_after = 20)]
-    pub string_values: Ptr32<StringBuffer>,
+    pub string_values: Ptr32<ValuesBuffer>,
 }
 
+#[derive(Debug, SsbhWrite, Arbitrary)]
+#[ssbhwrite(alignment = 4)]
+pub struct NamesBuffer(pub Vec<u8>);
+
+impl BinRead for NamesBuffer {
+    // The names buffer has a string count.
+    // This essentially counts the number of null bytes.
+    type Args = (u32,);
+
+    fn read_options<R: Read + Seek>(
+        reader: &mut R,
+        _options: &ReadOptions,
+        args: Self::Args,
+    ) -> BinResult<Self> {
+        // TODO: Avoid redundant reads of strings?
+        let mut values = Vec::new();
+        let expected_count = args.0;
+
+        let mut current_count = 0;
+        loop {
+            if current_count == expected_count {
+                break;
+            }
+
+            let val: u8 = reader.read_le()?;
+            if val == 0 {
+                current_count += 1;
+            }
+            values.push(val);
+        }
+        Ok(Self(values))
+    }
+}
+
+// The values buffer has no count and fills the rest of the file.
+#[derive(Debug, BinRead, SsbhWrite, Arbitrary)]
+#[ssbhwrite(alignment = 4)]
+pub struct ValuesBuffer(#[br(parse_with = until_eof)] pub Vec<u8>);
+
 impl Xmb {
-    pub fn read_name(&self, name_offset: u32) -> Option<String> {
-        // TODO: This is a messy way to find the string with the given offset.
-        self.string_names
-            .as_ref()?
-            .0
-            .iter()
-            .find(|(offset, _)| *offset == name_offset as u64)
-            .map(|(_, value)| value.to_string())
+    pub fn read_name(&self, offset: u32) -> Option<String> {
+        let mut reader = Cursor::new(&self.string_names.as_ref()?.0);
+        reader.seek(SeekFrom::Start(offset as u64)).ok()?;
+        read_null_string(&mut reader).ok().map(|s| s.to_string())
     }
 
-    pub fn read_value(&self, value_offset: u32) -> Option<String> {
-        self.string_values
-            .as_ref()?
-            .0
-            .iter()
-            .find(|(offset, _)| *offset == value_offset as u64)
-            .map(|(_, value)| value.to_string())
+    pub fn read_value(&self, offset: u32) -> Option<String> {
+        let mut reader = Cursor::new(&self.string_values.as_ref()?.0);
+        reader.seek(SeekFrom::Start(offset as u64)).ok()?;
+        read_null_string(&mut reader).ok().map(|s| s.to_string())
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
@@ -144,113 +175,16 @@ impl Xmb {
     }
 }
 
-#[derive(Debug)]
-pub struct StringBuffer(pub Vec<(u64, NullString)>);
-
 // TODO: Use binrw once it's patched.
 //https://github.com/jam1garner/binrw/blob/03f175f99f5a6fd506d016cf1c8c1cff18f030f2/binrw/src/strings.rs#L151-L169
-fn read_null_string<R: Read + Seek>(
-    reader: &mut R,
-    options: &ReadOptions,
-) -> BinResult<NullString> {
+fn read_null_string<R: Read + Seek>(reader: &mut R) -> BinResult<NullString> {
     let mut values = Vec::new();
 
     loop {
-        let val = <u8>::read_options(reader, options, ())?;
+        let val: u8 = reader.read_le()?;
         if val == 0 {
             return Ok(NullString(values));
         }
         values.push(val);
-    }
-}
-
-impl<'a> Arbitrary<'a> for StringBuffer {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        // TODO: Is this a good implementation?
-        let elements: Vec<(u64, String)> = u.arbitrary()?;
-        Ok(Self(
-            elements
-                .into_iter()
-                .map(|(k, v)| (k, NullString(v.as_bytes().to_vec())))
-                .collect(),
-        ))
-    }
-}
-
-impl BinRead for StringBuffer {
-    type Args = ();
-
-    fn read_options<R: Read + Seek>(
-        reader: &mut R,
-        options: &ReadOptions,
-        _args: Self::Args,
-    ) -> BinResult<Self> {
-        let mut values = Vec::new();
-        // The string names have a specified count.
-        if let Some(count) = options.count {
-            let start = reader.stream_position()?;
-            for _ in 0..count {
-                let relative_offset = reader.stream_position()? - start;
-                let value = read_null_string(reader, options)?;
-                values.push((relative_offset, value));
-            }
-        } else {
-            // HACK: Create a second buffer to be able to detect EOF.
-            // There's probably a nicer way of reading null terminated strings in a loop.
-            // TODO: Check if the reader position hasn't moved since the last iteration instead?
-            let mut buffer = Vec::new();
-            reader.read_to_end(&mut buffer)?;
-
-            // This case is just to handle the string values going until EOF.
-            // The names buffer has a specified string count.
-            let mut buffer_reader = Cursor::new(buffer);
-            loop {
-                let relative_offset = buffer_reader.stream_position()?;
-                if relative_offset as usize >= buffer_reader.get_ref().len() {
-                    break;
-                }
-                let byte_result: Result<Vec<u8>, _> = (&mut buffer_reader)
-                    .bytes()
-                    .take_while(|b| !matches!(b, Ok(0)))
-                    .collect();
-                let bytes: Vec<_> = byte_result?
-                    .into_iter()
-                    .map(|x| unsafe { NonZeroU8::new_unchecked(x) })
-                    .collect();
-                values.push((relative_offset, bytes.into()));
-            }
-        }
-
-        Ok(Self(values))
-    }
-}
-
-// TODO: SsbhWrite lacks a skip attribute for the saved position, so this can't be derived.
-impl SsbhWrite for StringBuffer {
-    fn ssbh_write<W: std::io::Write + std::io::Seek>(
-        &self,
-        writer: &mut W,
-        data_ptr: &mut u64,
-    ) -> std::io::Result<()> {
-        let current_pos = writer.stream_position()?;
-        if *data_ptr < current_pos + self.size_in_bytes() {
-            *data_ptr = current_pos + self.size_in_bytes();
-        }
-
-        // Write each string and null terminator.
-        for (_, value) in &self.0 {
-            writer.write_all(&value.0)?;
-            writer.write_all(&[0u8])?;
-        }
-
-        Ok(())
-    }
-
-    fn size_in_bytes(&self) -> u64 {
-        self.0.len() as u64
-    }
-
-    fn alignment_in_bytes() -> u64 {
-        4
     }
 }

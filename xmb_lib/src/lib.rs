@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use binread::NullString;
 use binread::{io::Cursor, BinReaderExt, BinResult};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
@@ -9,7 +8,6 @@ use std::error::Error;
 use std::fs;
 use std::io::{Seek, Write};
 use std::iter::FromIterator;
-use std::num::NonZeroU8;
 use std::path::Path;
 use xmb::*;
 use xmltree::{Element, XMLNode};
@@ -141,13 +139,6 @@ fn add_temp_entries_recursive(
     }
 }
 
-fn get_null_string(bytes: &[u8]) -> NullString {
-    // TODO: This should take up to the first non zero byte rather than filtering 0 bytes.
-    // TODO: This will probably be cleaner without using NullString.
-    let bytes_nonzero: Vec<_> = bytes.iter().filter_map(|b| NonZeroU8::new(*b)).collect();
-    bytes_nonzero.into()
-}
-
 // TODO: Find a way to test this conversion.
 // TODO: This should be try_from or it's own method.
 impl From<&XmbFile> for Xmb {
@@ -177,28 +168,22 @@ impl From<&XmbFile> for Xmb {
         // TODO: Avoid unwrap.
         let mut string_offsets = BTreeMap::new();
         let mut names_buffer = Cursor::new(Vec::new());
-        let mut string_names = Vec::new();
         for name in names {
             let offset = names_buffer.stream_position().unwrap();
             string_offsets.insert(name.clone(), offset as u32);
 
             names_buffer.write_all(name.as_bytes()).unwrap();
             names_buffer.write_all(&[0u8]).unwrap();
-
-            string_names.push((offset, get_null_string(name.as_bytes())));
         }
 
         let mut values_offsets = BTreeMap::new();
         let mut values_buffer = Cursor::new(Vec::new());
-        let mut string_values = Vec::new();
         for value in values {
             let offset = values_buffer.stream_position().unwrap();
             values_offsets.insert(value.clone(), offset as u32);
 
             values_buffer.write_all(value.as_bytes()).unwrap();
             values_buffer.write_all(&[0u8]).unwrap();
-
-            string_values.push((offset, get_null_string(value.as_bytes())));
         }
 
         // Collect all entries and attributes.
@@ -271,8 +256,8 @@ impl From<&XmbFile> for Xmb {
             entries: Ptr32::new(entries),
             attributes: Ptr32::new(attributes),
             mapped_entries: Ptr32::new(mapped_entries),
-            string_names: Ptr32::new(StringBuffer(string_names)),
-            string_values: Ptr32::new(StringBuffer(string_values)),
+            string_names: Ptr32::new(NamesBuffer(names_buffer.into_inner())),
+            string_values: Ptr32::new(ValuesBuffer(values_buffer.into_inner())),
         }
     }
 }
@@ -473,7 +458,7 @@ fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
                 .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
                 .collect()
         })
-        .unwrap_or(Vec::new());
+        .unwrap_or_else(Vec::new);
 
     XmbFile { entries: roots }
 }
