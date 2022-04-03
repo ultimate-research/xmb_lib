@@ -41,3 +41,9 @@ name = "read_xmb"
 path = "fuzz_targets/read_xmb.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "write_read_xmbfile"
+path = "fuzz_targets/write_read_xmbfile.rs"
+test = false
+doc = false

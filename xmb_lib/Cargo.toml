@@ -7,6 +7,8 @@ edition = "2018"
 [dependencies]
 binread = "2.1.1"
 serde_json = "1.0"
+thiserror = "1.0.30"
+# TODO: Make these optional features
 serde = { version = "1.0", features = ["derive"] }
 arbitrary = { version = "1", features = ["derive"] }
 xmltree = { version = "0.10.3", features = ["attribute-order"] }

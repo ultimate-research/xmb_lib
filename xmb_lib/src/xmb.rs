@@ -136,13 +136,13 @@ impl Xmb {
     pub fn read_name(&self, offset: u32) -> Option<String> {
         let mut reader = Cursor::new(&self.string_names.as_ref()?.0);
         reader.seek(SeekFrom::Start(offset as u64)).ok()?;
-        read_null_string(&mut reader).ok().map(|s| s.to_string())
+        read_null_string(&mut reader).ok().map(|s| s.into_string())
     }
 
     pub fn read_value(&self, offset: u32) -> Option<String> {
         let mut reader = Cursor::new(&self.string_values.as_ref()?.0);
         reader.seek(SeekFrom::Start(offset as u64)).ok()?;
-        read_null_string(&mut reader).ok().map(|s| s.to_string())
+        read_null_string(&mut reader).ok().map(|s| s.into_string())
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {

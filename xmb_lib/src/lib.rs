@@ -1,18 +1,33 @@
 use arbitrary::Arbitrary;
-use binread::{io::Cursor, BinReaderExt, BinResult};
+use binread::{io::Cursor, BinReaderExt};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
 use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 use std::error::Error;
 use std::fs;
-use std::io::{Seek, Write};
+use std::io::{Read, Seek, Write};
 use std::iter::FromIterator;
 use std::path::Path;
+use thiserror::Error;
 use xmb::*;
 use xmltree::{Element, XMLNode};
 
 pub mod xmb;
+
+// TODO: Create meaningful error variants.
+#[derive(Debug, Error)]
+pub enum ReadXmbError {
+    #[error("encountered a null pointer")]
+    NullError,
+
+    #[error("failed to parse XMB binary")]
+    BinRead(#[from] binread::Error),
+
+    #[error("failed to parse XMB binary")]
+    Io(#[from] std::io::Error),
+}
 
 // TODO: Deserialize?
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -55,8 +70,16 @@ impl XmbFile {
         }
     }
 
+    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
+        Xmb::read(reader)?.try_into().map_err(Into::into)
+    }
+
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
-        Xmb::from_file(path).map(Into::into)
+        Xmb::from_file(path)?.try_into().map_err(Into::into)
+    }
+
+    pub fn write<W: Write + Seek>(&self, writer: &mut W) -> std::io::Result<()> {
+        Xmb::from(self).write(writer)
     }
 
     pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
@@ -80,15 +103,20 @@ fn create_entry_from_xml_recursive(xml_node: &Element) -> XmbFileEntry {
     }
 }
 
-impl From<Xmb> for XmbFile {
-    fn from(xmb: Xmb) -> Self {
-        Self::from(&xmb)
+impl TryFrom<Xmb> for XmbFile {
+    type Error = ReadXmbError;
+
+    fn try_from(xmb: Xmb) -> Result<Self, Self::Error> {
+        Self::try_from(&xmb)
     }
 }
 
-impl From<&Xmb> for XmbFile {
-    fn from(xmb: &Xmb) -> Self {
-        xmb_file_from_xmb(xmb)
+// TODO: Make a separate XmbError without IO errors?
+impl TryFrom<&Xmb> for XmbFile {
+    type Error = ReadXmbError;
+
+    fn try_from(xmb: &Xmb) -> Result<Self, Self::Error> {
+        create_xmb_file(&xmb).ok_or(ReadXmbError::NullError)
     }
 }
 
@@ -157,7 +185,7 @@ impl From<&XmbFile> for Xmb {
         for entry in &flattened_temp_entries {
             names.insert(entry.name.clone());
             for (k, v) in &entry.attributes {
-                names.insert(k.to_string());
+                names.insert(k.clone());
                 values.insert(v);
             }
         }
@@ -404,23 +432,26 @@ fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
     }
 }
 
-fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> IndexMap<String, String> {
-    // TODO: This should fail if read returns None.
+fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> Option<IndexMap<String, String>> {
     (0..entry.attribute_count)
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
             let attribute_index = (entry.attribute_start_index as u16 + i) as usize;
-            let attribute = &xmb_data.attributes.as_ref().unwrap()[attribute_index];
-            let key = xmb_data.read_name(attribute.name_offset).unwrap();
-            let value = xmb_data.read_value(attribute.value_offset).unwrap();
-            (key, value)
+            let attribute = &xmb_data.attributes.as_ref()?.get(attribute_index)?;
+            let key = xmb_data.read_name(attribute.name_offset)?;
+            let value = xmb_data.read_value(attribute.value_offset)?;
+            Some((key, value))
         })
         .collect()
 }
 
 // TODO: Try to find a more straightforward iterative approach.
 // It should be doable to iterate the entry list at most twice?
-fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) -> XmbFileEntry {
+fn create_children_recursive(
+    xmb_data: &Xmb,
+    entry: &Entry,
+    entry_index: i16,
+) -> Option<XmbFileEntry> {
     let child_entries: Vec<_> = xmb_data
         .entries
         .as_ref()
@@ -433,20 +464,20 @@ fn create_children_recursive(xmb_data: &Xmb, entry: &Entry, entry_index: i16) ->
     let children: Vec<_> = child_entries
         .iter()
         .map(|(i, e)| create_children_recursive(xmb_data, e, *i as i16))
-        .collect();
+        .collect::<Option<Vec<_>>>()?;
 
-    // TODO: This should fail if read_name returns None.
-    XmbFileEntry {
-        name: xmb_data.read_name(entry.name_offset).unwrap(),
-        attributes: get_attributes(xmb_data, entry),
+    Some(XmbFileEntry {
+        name: xmb_data.read_name(entry.name_offset)?,
+        attributes: get_attributes(xmb_data, entry)?,
         children,
-    }
+    })
 }
 
-fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
+fn create_xmb_file(xmb_data: &Xmb) -> Option<XmbFile> {
     // First find the nodes with no parents.
     // Then recursively add their children based on the parent index.
     // Assume a null pointer just means no entries.
+    // TODO: Return an error instead of an option?
     let roots: Vec<_> = xmb_data
         .entries
         .as_ref()
@@ -458,18 +489,18 @@ fn xmb_file_from_xmb(xmb_data: &Xmb) -> XmbFile {
                 .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
                 .collect()
         })
-        .unwrap_or_else(Vec::new);
+        .flatten()?;
 
-    XmbFile { entries: roots }
+    Some(XmbFile { entries: roots })
 }
 
 // TODO: Support a user specified reader or writer.
-pub fn read_xmb(file: &Path) -> BinResult<XmbFile> {
+pub fn read_xmb(file: &Path) -> Result<XmbFile, ReadXmbError> {
     // XMB files are small, so load the whole file into memory.
     let mut file = Cursor::new(fs::read(file)?);
     let xmb_data = file.read_le::<Xmb>()?;
 
-    Ok(xmb_file_from_xmb(&xmb_data))
+    create_xmb_file(&xmb_data).ok_or(ReadXmbError::NullError)
 }
 
 // TODO: Separate file for XmbFile types?
