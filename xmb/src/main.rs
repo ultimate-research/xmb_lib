@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use std::{
+    convert::TryFrom,
     io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
@@ -68,7 +69,7 @@ fn main() {
             match output.extension().unwrap().to_str().unwrap() {
                 "xmb" => xmb.write_to_file(output).unwrap(),
                 "xml" => {
-                    let xmb_file = XmbFile::from(&xmb);
+                    let xmb_file = XmbFile::try_from(&xmb).unwrap();
 
                     let element = xmb_file.to_xml();
 
