@@ -116,7 +116,7 @@ impl TryFrom<&Xmb> for XmbFile {
     type Error = ReadXmbError;
 
     fn try_from(xmb: &Xmb) -> Result<Self, Self::Error> {
-        create_xmb_file(&xmb).ok_or(ReadXmbError::NullError)
+        create_xmb_file(xmb).ok_or(ReadXmbError::NullError)
     }
 }
 
@@ -142,19 +142,19 @@ fn add_temp_entries_recursive(
         .iter()
         .enumerate()
         .map(|(i, child)| {
-            let temp = XmbEntryTemp {
-                name: child.name.clone(),
+            // Rust strings allow null bytes but XMB does not.
+            // For now, just strip nulls.
+            XmbEntryTemp {
+                name: child.name.replace("\0", ""),
                 attributes: child
                     .attributes
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .map(|(k, v)| (k.replace("\0", ""), v.replace("\0", "")))
                     .collect(),
                 parent_index,
                 child_count: child.children.len(),
                 index: temp_entries.len() + i,
-            };
-
-            temp
+            }
         })
         .collect();
 
@@ -200,6 +200,9 @@ impl From<&XmbFile> for Xmb {
             let offset = names_buffer.stream_position().unwrap();
             string_offsets.insert(name.clone(), offset as u32);
 
+            // TODO: This writes additional null bytes for empty strings?
+            // TODO: Empty strings won't have a null byte?
+            // TODO: This will only read one null byte when reading a new xmb even if we write more?
             names_buffer.write_all(name.as_bytes()).unwrap();
             names_buffer.write_all(&[0u8]).unwrap();
         }
@@ -363,8 +366,7 @@ fn find_parent<'a>(
 ) -> Option<&'a XmbEntryTemp> {
     entry
         .parent_index
-        .map(|i| flattened_temp_entries.get(i))
-        .flatten()
+        .and_then(|i| flattened_temp_entries.get(i))
 }
 
 fn find_next_sibling<'a>(
@@ -478,18 +480,14 @@ fn create_xmb_file(xmb_data: &Xmb) -> Option<XmbFile> {
     // Then recursively add their children based on the parent index.
     // Assume a null pointer just means no entries.
     // TODO: Return an error instead of an option?
-    let roots: Vec<_> = xmb_data
-        .entries
-        .as_ref()
-        .map(|entries| {
-            entries
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| e.parent_index == -1)
-                .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
-                .collect()
-        })
-        .flatten()?;
+    let roots: Vec<_> = xmb_data.entries.as_ref().and_then(|entries| {
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.parent_index == -1)
+            .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
+            .collect()
+    })?;
 
     Some(XmbFile { entries: roots })
 }
@@ -616,5 +614,33 @@ mod tests {
         let mapped_entries = xmb.mapped_entries.as_ref().unwrap();
         assert_eq!(2, mapped_entries[0].entry_index);
         assert_eq!(1, mapped_entries[1].entry_index);
+    }
+
+    #[test]
+    fn write_read_xmbfile_nulls() {
+        let xmb_file = XmbFile {
+            entries: vec![XmbFileEntry {
+                name: "\0".to_string(),
+                attributes: indexmap!["\0".to_string() => "\0".to_string()],
+                children: Vec::new(),
+            }],
+        };
+
+        let mut writer = std::io::Cursor::new(Vec::new());
+        xmb_file.write(&mut writer).unwrap();
+
+        // Check that null bytes in the strings are removed.
+        let mut reader = std::io::Cursor::new(writer.into_inner());
+        let new_xmb_file = XmbFile::read(&mut reader).unwrap();
+        assert_eq!(
+            XmbFile {
+                entries: vec![XmbFileEntry {
+                    name: "".to_string(),
+                    attributes: indexmap!["".to_string() => "".to_string()],
+                    children: Vec::new(),
+                }],
+            },
+            new_xmb_file
+        );
     }
 }
