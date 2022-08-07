@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use binread::{io::Cursor, BinReaderExt};
+use binrw::{io::Cursor, BinReaderExt};
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 use ssbh_lib::Ptr32;
@@ -23,7 +23,7 @@ pub enum ReadXmbError {
     NullError,
 
     #[error("failed to parse XMB binary")]
-    BinRead(#[from] binread::Error),
+    BinRead(#[from] binrw::Error),
 
     #[error("failed to parse XMB binary")]
     Io(#[from] std::io::Error),

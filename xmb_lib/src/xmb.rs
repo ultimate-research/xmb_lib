@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use binread::{helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
+use binrw::{helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
 use std::{
