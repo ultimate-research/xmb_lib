@@ -16,9 +16,18 @@ use xmltree::{Element, XMLNode};
 
 pub mod xmb;
 
-// TODO: Create meaningful error variants.
+#[derive(Debug, Error)]
+pub enum CreateXmlError {
+    // TODO: Are empty XMB documents valid?
+    #[error("failed to find a root element")]
+    MissingRootElement,
+    #[error("encountered more than one root element")]
+    MultipleRootElements,
+}
+
 #[derive(Debug, Error)]
 pub enum ReadXmbError {
+    // TODO: Create meaningful error variants.
     #[error("encountered a null pointer")]
     NullError,
 
@@ -53,14 +62,17 @@ pub struct XmbFile {
 }
 
 impl XmbFile {
-    // TODO: Should these return a result?
-    pub fn to_xml(&self) -> Option<Element> {
-        // TODO: Don't assume that there is a single root?
-        // TODO: XML doesn't technically support multiple root nodes.
-        // TODO: Return an error on failure?
-        self.entries
-            .get(0)
-            .map(|entry| create_element_recursive(self, entry))
+    pub fn to_xml(&self) -> Result<Element, CreateXmlError> {
+        let mut root_entries = self.entries.iter();
+        let entry = root_entries
+            .next()
+            .ok_or(CreateXmlError::MissingRootElement)?;
+
+        if root_entries.next().is_some() {
+            return Err(CreateXmlError::MultipleRootElements);
+        }
+
+        Ok(create_element_recursive(self, entry))
     }
 
     pub fn from_xml(root: &Element) -> Self {
@@ -557,7 +569,7 @@ mod tests {
         );
 
         // Just test the tree representation to avoid testing formatting differences.
-        let output_element = xmb_file.to_xml();
+        let output_element = xmb_file.to_xml().unwrap();
         assert_eq!(element, output_element);
     }
 
@@ -643,5 +655,36 @@ mod tests {
             },
             new_xmb_file
         );
+    }
+
+    #[test]
+    fn xmb_file_to_xml_no_root() {
+        let xmb_file = XmbFile {
+            entries: Vec::new(),
+        };
+
+        let result = xmb_file.to_xml();
+        assert!(matches!(result, Err(CreateXmlError::MissingRootElement)));
+    }
+
+    #[test]
+    fn xmb_file_to_xml_multiple_root() {
+        let xmb_file = XmbFile {
+            entries: vec![
+                XmbFileEntry {
+                    name: String::new(),
+                    attributes: IndexMap::new(),
+                    children: Vec::new(),
+                },
+                XmbFileEntry {
+                    name: String::new(),
+                    attributes: IndexMap::new(),
+                    children: Vec::new(),
+                },
+            ],
+        };
+
+        let result = xmb_file.to_xml();
+        assert!(matches!(result, Err(CreateXmlError::MultipleRootElements)));
     }
 }
