@@ -54,12 +54,13 @@ pub struct XmbFile {
 
 impl XmbFile {
     // TODO: Should these return a result?
-    pub fn to_xml(&self) -> Element {
-        // TODO: Don't assume this is the root entry or that there is a single root?
+    pub fn to_xml(&self) -> Option<Element> {
+        // TODO: Don't assume that there is a single root?
         // TODO: XML doesn't technically support multiple root nodes.
         // TODO: Return an error on failure?
-        let entry = &self.entries[0];
-        create_element_recursive(self, entry)
+        self.entries
+            .get(0)
+            .map(|entry| create_element_recursive(self, entry))
     }
 
     pub fn from_xml(root: &Element) -> Self {

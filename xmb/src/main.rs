@@ -71,7 +71,7 @@ fn main() {
                 "xml" => {
                     let xmb_file = XmbFile::try_from(&xmb).unwrap();
 
-                    let element = xmb_file.to_xml();
+                    let element = xmb_file.to_xml().unwrap();
 
                     // Match the output of the original Python script where possible.
                     let config = EmitterConfig::new()
