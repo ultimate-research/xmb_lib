@@ -505,15 +505,6 @@ fn create_xmb_file(xmb_data: &Xmb) -> Option<XmbFile> {
     Some(XmbFile { entries: roots })
 }
 
-// TODO: Support a user specified reader or writer.
-pub fn read_xmb(file: &Path) -> Result<XmbFile, ReadXmbError> {
-    // XMB files are small, so load the whole file into memory.
-    let mut file = Cursor::new(fs::read(file)?);
-    let xmb_data = file.read_le::<Xmb>()?;
-
-    create_xmb_file(&xmb_data).ok_or(ReadXmbError::NullError)
-}
-
 // TODO: Separate file for XmbFile types?
 #[cfg(test)]
 mod tests {

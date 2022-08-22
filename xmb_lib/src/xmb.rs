@@ -6,11 +6,46 @@ use std::{
     io::{Cursor, Read, Seek, SeekFrom, Write},
     path::Path,
 };
-
 // TODO: Limit the number of nodes to fall within the appropriate ranges?
 // This is limited by the number of bits for the indices rather than entry count.
-
 // TODO: Document remaining fields.
+// TODO: bigendian if node_count has FF000000 > 0?
+
+/// A flattened tree of named nodes with each node containing a collection of named attributes.
+/// This corresponds to an XML document.
+#[derive(Debug, BinRead, SsbhWrite, Arbitrary)]
+#[br(magic = b"XMB ")]
+#[ssbhwrite(align_after = 4)]
+pub struct Xmb {
+    pub entry_count: u32,
+    pub attribute_count: u32,
+    pub string_count: u32,
+    pub mapped_entry_count: u32,
+
+    /// Offsets for the values in [string_values](struct.Xmb.html#structfield.string_values) sorted alphabetically.
+    #[br(count = string_count)]
+    pub string_offsets: Ptr32<Vec<u32>>, // sorted in alphabetical order by string
+
+    /// A flattened list of entries.
+    #[br(count = entry_count)]
+    pub entries: Ptr32<Vec<Entry>>,
+
+    /// A combined collection of all [Entry] attributes.
+    #[br(count = attribute_count)]
+    pub attributes: Ptr32<Vec<Attribute>>,
+
+    /// A lookup table for the `"id"` attribute sorted alphabetically by value.
+    #[br(count = mapped_entry_count)]
+    pub mapped_entries: Ptr32<Vec<MappedEntry>>,
+
+    /// Unique values for [Entry] and [Attribute] names.
+    #[br(args(string_count))]
+    pub string_names: Ptr32<NamesBuffer>,
+
+    /// Unique values for [Attribute] values.
+    #[ssbhwrite(pad_after = 20)]
+    pub string_values: Ptr32<ValuesBuffer>,
+}
 
 /// A named node with a collection of named attributes that corresponds to an XML element.
 /// The [parent_index](#structfield.parent_index) can be used to recreate the original tree structure.
@@ -53,44 +88,6 @@ pub struct MappedEntry {
     pub value_offset: u32,
     /// The index of the corresponding [Entry] in [entries](struct.Xmb.html#structfield.entries).
     pub entry_index: u32,
-}
-
-// TODO: bigendian if node_count has FF000000 > 0?
-
-/// A flattened tree of named nodes with each node containing a collection of named attributes.
-/// This corresponds to an XML document.
-#[derive(Debug, BinRead, SsbhWrite, Arbitrary)]
-#[br(magic = b"XMB ")]
-#[ssbhwrite(align_after = 4)]
-pub struct Xmb {
-    pub entry_count: u32,
-    pub attribute_count: u32,
-    pub string_count: u32,
-    pub mapped_entry_count: u32,
-
-    /// Offsets for the values in [string_values](struct.Xmb.html#structfield.string_values) sorted alphabetically.
-    #[br(count = string_count)]
-    pub string_offsets: Ptr32<Vec<u32>>, // sorted in alphabetical order by string
-
-    /// A flattened list of entries.
-    #[br(count = entry_count)]
-    pub entries: Ptr32<Vec<Entry>>,
-
-    /// A combined collection of all [Entry] attributes.
-    #[br(count = attribute_count)]
-    pub attributes: Ptr32<Vec<Attribute>>,
-
-    /// A lookup table for the `"id"` attribute sorted alphabetically by value.
-    #[br(count = mapped_entry_count)]
-    pub mapped_entries: Ptr32<Vec<MappedEntry>>,
-
-    /// Unique values for [Entry] and [Attribute] names.
-    #[br(args(string_count))]
-    pub string_names: Ptr32<NamesBuffer>,
-
-    /// Unique values for [Attribute] values.
-    #[ssbhwrite(pad_after = 20)]
-    pub string_values: Ptr32<ValuesBuffer>,
 }
 
 #[derive(Debug, SsbhWrite, Arbitrary)]
