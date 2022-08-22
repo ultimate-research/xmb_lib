@@ -173,13 +173,13 @@ impl Xmb {
     pub fn read_name(&self, offset: u32) -> Option<String> {
         let mut reader = Cursor::new(&self.string_names.as_ref()?.0);
         reader.seek(SeekFrom::Start(offset as u64)).ok()?;
-        read_null_string(&mut reader).ok().map(|s| s.into_string())
+        NullString::read(&mut reader).ok().map(|s| s.into_string())
     }
 
     pub fn read_value(&self, offset: u32) -> Option<String> {
         let mut reader = Cursor::new(&self.string_values.as_ref()?.0);
         reader.seek(SeekFrom::Start(offset as u64)).ok()?;
-        read_null_string(&mut reader).ok().map(|s| s.into_string())
+        NullString::read(&mut reader).ok().map(|s| s.into_string())
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
@@ -209,19 +209,5 @@ impl Xmb {
         let mut output = std::fs::File::create(path)?;
         output.write_all(writer.get_mut())?;
         Ok(())
-    }
-}
-
-// TODO: Use binrw once it's patched.
-//https://github.com/jam1garner/binrw/blob/03f175f99f5a6fd506d016cf1c8c1cff18f030f2/binrw/src/strings.rs#L151-L169
-fn read_null_string<R: Read + Seek>(reader: &mut R) -> BinResult<NullString> {
-    let mut values = Vec::new();
-
-    loop {
-        let val: u8 = reader.read_le()?;
-        if val == 0 {
-            return Ok(NullString(values));
-        }
-        values.push(val);
     }
 }
