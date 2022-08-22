@@ -1,5 +1,7 @@
 use arbitrary::Arbitrary;
-use binrw::{helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions};
+use binrw::{
+    helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions, VecArgs,
+};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
 use std::{
@@ -24,19 +26,19 @@ pub struct Xmb {
 
     /// Offsets for the values in [string_values](struct.Xmb.html#structfield.string_values) sorted alphabetically.
     #[br(count = string_count)]
-    pub string_offsets: Ptr32<Vec<u32>>, // sorted in alphabetical order by string
+    pub string_offsets: XmbVec<u32>, // sorted in alphabetical order by string
 
     /// A flattened list of entries.
     #[br(count = entry_count)]
-    pub entries: Ptr32<Vec<Entry>>,
+    pub entries: XmbVec<Entry>,
 
     /// A combined collection of all [Entry] attributes.
     #[br(count = attribute_count)]
-    pub attributes: Ptr32<Vec<Attribute>>,
+    pub attributes: XmbVec<Attribute>,
 
     /// A lookup table for the `"id"` attribute sorted alphabetically by value.
     #[br(count = mapped_entry_count)]
-    pub mapped_entries: Ptr32<Vec<MappedEntry>>,
+    pub mapped_entries: XmbVec<MappedEntry>,
 
     /// Unique values for [Entry] and [Attribute] names.
     #[br(args(string_count))]
@@ -128,6 +130,44 @@ impl BinRead for NamesBuffer {
 #[derive(Debug, BinRead, SsbhWrite, Arbitrary)]
 #[ssbhwrite(alignment = 4)]
 pub struct ValuesBuffer(#[br(parse_with = until_eof)] pub Vec<u8>);
+
+#[derive(Debug, SsbhWrite, Arbitrary)]
+pub struct XmbVec<T: SsbhWrite>(pub Ptr32<Vec<T>>);
+
+impl<T: SsbhWrite> XmbVec<T> {
+    pub fn new(elements: Vec<T>) -> Self {
+        Self(Ptr32::new(elements))
+    }
+}
+
+impl<T: BinRead<Args = ()> + SsbhWrite> BinRead for XmbVec<T> {
+    type Args = VecArgs<()>;
+
+    fn read_options<R: Read + Seek>(
+        reader: &mut R,
+        options: &ReadOptions,
+        args: Self::Args,
+    ) -> BinResult<Self> {
+        let offset = u32::read_options(reader, options, ())?;
+        if offset == 0 {
+            return Ok(XmbVec(Ptr32::null()));
+        }
+        let saved_pos = reader.stream_position()?;
+
+        // Create a custom reader to avoid preallocating memory.
+        // This makes the parser more resilient to malformed length fields.
+        // Xmb files tend to have a small number of entries anyway.
+        reader.seek(SeekFrom::Start(offset as u64))?;
+        let mut elements = Vec::new();
+        for _ in 0..args.count {
+            let element = T::read_options(reader, options, ())?;
+            elements.push(element);
+        }
+
+        reader.seek(SeekFrom::Start(saved_pos))?;
+        Ok(XmbVec(Ptr32::new(elements)))
+    }
+}
 
 impl Xmb {
     pub fn read_name(&self, offset: u32) -> Option<String> {

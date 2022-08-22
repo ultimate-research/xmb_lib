@@ -296,10 +296,10 @@ impl From<&XmbFile> for Xmb {
             attribute_count: attributes.len() as u32,
             string_count: string_offsets.len() as u32,
             mapped_entry_count: mapped_entries.len() as u32,
-            string_offsets: Ptr32::new(string_offsets.values().copied().collect()),
-            entries: Ptr32::new(entries),
-            attributes: Ptr32::new(attributes),
-            mapped_entries: Ptr32::new(mapped_entries),
+            string_offsets: XmbVec::new(string_offsets.values().copied().collect()),
+            entries: XmbVec::new(entries),
+            attributes: XmbVec::new(attributes),
+            mapped_entries: XmbVec::new(mapped_entries),
             string_names: Ptr32::new(NamesBuffer(names_buffer.into_inner())),
             string_values: Ptr32::new(ValuesBuffer(values_buffer.into_inner())),
         }
@@ -452,7 +452,7 @@ fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> Option<IndexMap<String, Stri
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
             let attribute_index = (entry.attribute_start_index as u16 + i) as usize;
-            let attribute = &xmb_data.attributes.as_ref()?.get(attribute_index)?;
+            let attribute = &xmb_data.attributes.0.as_ref()?.get(attribute_index)?;
             let key = xmb_data.read_name(attribute.name_offset)?;
             let value = xmb_data.read_value(attribute.value_offset)?;
             Some((key, value))
@@ -469,6 +469,7 @@ fn create_children_recursive(
 ) -> Option<XmbFileEntry> {
     let child_entries: Vec<_> = xmb_data
         .entries
+        .0
         .as_ref()
         .unwrap()
         .iter()
@@ -493,7 +494,7 @@ fn create_xmb_file(xmb_data: &Xmb) -> Option<XmbFile> {
     // Then recursively add their children based on the parent index.
     // Assume a null pointer just means no entries.
     // TODO: Return an error instead of an option?
-    let roots: Vec<_> = xmb_data.entries.as_ref().and_then(|entries| {
+    let roots: Vec<_> = xmb_data.entries.0.as_ref().and_then(|entries| {
         entries
             .iter()
             .enumerate()
@@ -599,7 +600,7 @@ mod tests {
         let xmb = Xmb::from(&xmb_file);
 
         assert_eq!(4, xmb.entry_count);
-        let entries = xmb.entries.as_ref().unwrap();
+        let entries = xmb.entries.0.as_ref().unwrap();
         assert_eq!(4, entries.len());
         // TODO: Document this order?
         assert_eq!(-1, entries[0].parent_index); // root
@@ -608,14 +609,14 @@ mod tests {
         assert_eq!(1, entries[3].parent_index); // subchild1
 
         assert_eq!(9, xmb.attribute_count);
-        assert_eq!(9, xmb.attributes.as_ref().unwrap().len());
+        assert_eq!(9, xmb.attributes.0.as_ref().unwrap().len());
 
         assert_eq!(10, xmb.string_count);
 
         // child1 and child2 have "id" attributes.
         // The order is flipped here since the ids are sorted.
         assert_eq!(2, xmb.mapped_entry_count);
-        let mapped_entries = xmb.mapped_entries.as_ref().unwrap();
+        let mapped_entries = xmb.mapped_entries.0.as_ref().unwrap();
         assert_eq!(2, mapped_entries[0].entry_index);
         assert_eq!(1, mapped_entries[1].entry_index);
     }
