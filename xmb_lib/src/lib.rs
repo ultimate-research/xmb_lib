@@ -1,14 +1,10 @@
-use arbitrary::Arbitrary;
-use binrw::{io::Cursor, BinReaderExt};
+use binrw::io::Cursor;
 use indexmap::{IndexMap, IndexSet};
-use serde::Serialize;
 use ssbh_lib::Ptr32;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;
-use std::fs;
 use std::io::{Read, Seek, Write};
-use std::iter::FromIterator;
 use std::path::Path;
 use thiserror::Error;
 use xmb::*;
@@ -39,14 +35,16 @@ pub enum ReadXmbError {
 }
 
 // TODO: Deserialize?
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct XmbFileEntry {
     pub name: String,
     pub attributes: IndexMap<String, String>,
     pub children: Vec<XmbFileEntry>,
 }
 
-impl<'a> Arbitrary<'a> for XmbFileEntry {
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for XmbFileEntry {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {
             name: u.arbitrary()?,
@@ -56,7 +54,9 @@ impl<'a> Arbitrary<'a> for XmbFileEntry {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq, Arbitrary)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[derive(Debug, PartialEq, Eq)]
 pub struct XmbFile {
     pub entries: Vec<XmbFileEntry>,
 }
