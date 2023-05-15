@@ -5,14 +5,14 @@ authors = ["ScanMountGoat"]
 edition = "2021"
 
 [dependencies]
-binrw = "0.8.4"
+binrw = "0.11.2"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 arbitrary = { version = "1.0", features = ["derive"], optional = true }
 xmltree = { version = "0.10.3", features = ["attribute-order"] }
 indexmap = { version = "1.7.0" }
-ssbh_lib = { git = "https://github.com/ultimate-research/ssbh_lib" }
-ssbh_write = { git = "https://github.com/ultimate-research/ssbh_lib" }
+ssbh_lib = "0.17.0"
+ssbh_write = "0.17.0"
 
 [features]
 arbitrary = ["dep:arbitrary", "ssbh_lib/arbitrary"]

@@ -1,6 +1,4 @@
-use binrw::{
-    helpers::until_eof, BinRead, BinReaderExt, BinResult, NullString, ReadOptions, VecArgs,
-};
+use binrw::{helpers::until_eof, BinRead, BinReaderExt, BinResult, Endian, NullString, VecArgs};
 use ssbh_lib::Ptr32;
 use ssbh_write::SsbhWrite;
 use std::{
@@ -103,12 +101,12 @@ pub struct NamesBuffer(pub Vec<u8>);
 impl BinRead for NamesBuffer {
     // The names buffer has a string count.
     // This essentially counts the number of null bytes.
-    type Args = (u32,);
+    type Args<'a> = (u32,);
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
-        _options: &ReadOptions,
-        args: Self::Args,
+        _endian: Endian,
+        args: Self::Args<'_>,
     ) -> BinResult<Self> {
         // TODO: Avoid redundant reads of strings?
         let mut values = Vec::new();
@@ -146,15 +144,15 @@ impl<T: SsbhWrite> XmbVec<T> {
     }
 }
 
-impl<T: BinRead<Args = ()> + SsbhWrite> BinRead for XmbVec<T> {
-    type Args = VecArgs<()>;
+impl<T: for<'a> BinRead<Args<'a> = ()> + SsbhWrite> BinRead for XmbVec<T> {
+    type Args<'a> = VecArgs<()>;
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
-        options: &ReadOptions,
-        args: Self::Args,
+        endian: Endian,
+        args: Self::Args<'_>,
     ) -> BinResult<Self> {
-        let offset = u32::read_options(reader, options, ())?;
+        let offset = u32::read_options(reader, endian, ())?;
         if offset == 0 {
             return Ok(XmbVec(Ptr32::null()));
         }
@@ -166,7 +164,7 @@ impl<T: BinRead<Args = ()> + SsbhWrite> BinRead for XmbVec<T> {
         reader.seek(SeekFrom::Start(offset as u64))?;
         let mut elements = Vec::new();
         for _ in 0..args.count {
-            let element = T::read_options(reader, options, ())?;
+            let element = T::read_options(reader, endian, ())?;
             elements.push(element);
         }
 
