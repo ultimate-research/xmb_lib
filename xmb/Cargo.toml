@@ -7,4 +7,4 @@ edition = "2021"
 [dependencies]
 xmb_lib = { path = "../xmb_lib" }
 xmltree = { version = "0.10.3", features = ["attribute-order"] }
-clap = "2.33.3"
+clap = { version = "4.5.1", features = ["derive"] }

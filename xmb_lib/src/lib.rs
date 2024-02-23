@@ -72,7 +72,7 @@ impl XmbFile {
             return Err(CreateXmlError::MultipleRootElements);
         }
 
-        Ok(create_element_recursive(self, entry))
+        Ok(create_element_recursive(entry))
     }
 
     pub fn from_xml(root: &Element) -> Self {
@@ -158,11 +158,11 @@ fn add_temp_entries_recursive(
             // Rust strings allow null bytes but XMB does not.
             // For now, just strip nulls.
             XmbEntryTemp {
-                name: child.name.replace("\0", ""),
+                name: child.name.replace('\0', ""),
                 attributes: child
                     .attributes
                     .iter()
-                    .map(|(k, v)| (k.replace("\0", ""), v.replace("\0", "")))
+                    .map(|(k, v)| (k.replace('\0', ""), v.replace('\0', "")))
                     .collect(),
                 parent_index,
                 child_count: child.children.len(),
@@ -429,12 +429,12 @@ fn find_next_sibling_with_children<'a>(
         .next()
 }
 
-fn create_element_recursive(xmb: &XmbFile, entry: &XmbFileEntry) -> Element {
+fn create_element_recursive(entry: &XmbFileEntry) -> Element {
     // Just create child elements for each mapped entry for now.
     let children: Vec<_> = entry
         .children
         .iter()
-        .map(|e| XMLNode::Element(create_element_recursive(xmb, e)))
+        .map(|e| XMLNode::Element(create_element_recursive(e)))
         .collect();
 
     xmltree::Element {
@@ -513,20 +513,21 @@ mod tests {
     // This tests the necessary format features with substantially smaller test cases.
     use super::*;
     use indexmap::indexmap;
+    use indoc::indoc;
 
     // TODO: Test Xmb <-> XmbFile
 
     #[test]
     fn xmb_file_to_from_xml() {
-        // TODO: Indoc?
-        let data = r#"
-        <?xml version="1.0" encoding="UTF-8"?>
-        <root a="1" b="2">
-            <child1 a="3" b="4">
-                <subchild1 c="7" d="8" e="f"/> 
-            </child1>
-            <child2 a="5" b="6"/>
-        </root>"#;
+        let data = indoc! {r#"
+            <?xml version="1.0" encoding="UTF-8"?>
+            <root a="1" b="2">
+                <child1 a="3" b="4">
+                    <subchild1 c="7" d="8" e="f"/> 
+                </child1>
+                <child2 a="5" b="6"/>
+            </root>"#
+        };
         let element = Element::parse(data.as_bytes()).unwrap();
 
         let xmb_file = XmbFile::from_xml(&element);

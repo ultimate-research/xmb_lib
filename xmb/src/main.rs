@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::Parser;
 use std::{
     convert::TryFrom,
     io::{BufWriter, Write},
@@ -8,32 +8,21 @@ use xmb_lib::xmb::Xmb;
 use xmb_lib::XmbFile;
 use xmltree::{Element, EmitterConfig};
 
-fn main() {
-    let matches = App::new("xmb")
-        .version("0.1")
-        .author("SMG")
-        .about("Convert XMB files to text formats")
-        .arg(
-            Arg::with_name("input")
-                .index(1)
-                .short("i")
-                .long("input")
-                .help("The input XML or XMB file")
-                .required(true)
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("output")
-                .index(2)
-                .short("o")
-                .long("output")
-                .help("The output XML, XMB, or dot (graphviz) file")
-                .required(false)
-                .takes_value(true),
-        )
-        .get_matches();
+/// Convert Smash XMB files to and from XML.
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    /// The input XML or XMB file
+    input: String,
+    /// The output XML, XMB, or dot (graphviz) file
+    output: Option<String>,
+}
 
-    let input = matches.value_of("input").unwrap();
+fn main() {
+    let cli = Cli::parse();
+
+    let input = &cli.input;
 
     // TODO: Clean this up.
     match PathBuf::from(&input).extension().unwrap().to_str().unwrap() {
@@ -45,8 +34,8 @@ fn main() {
 
             // Replace the xml extension.
             // Ex: model.xmb.xml -> model.xmb.xmb.
-            let output = matches
-                .value_of("output")
+            let output = cli
+                .output
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(input).with_extension("xmb"));
 
@@ -61,8 +50,8 @@ fn main() {
 
             // Append .xml to the existing file to avoid overwriting existing files.
             // Ex: model.xmb -> model.xmb.xml.
-            let output = matches
-                .value_of("output")
+            let output = cli
+                .output
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(input.to_string() + ".xml"));
 
@@ -119,7 +108,6 @@ fn write_dot_graph<P: AsRef<Path>>(output: P, xmb: &Xmb) -> std::io::Result<()> 
                     i,
                     xmb.read_name(entry.name_offset).unwrap()
                 )?;
-                // }
             }
         }
 
