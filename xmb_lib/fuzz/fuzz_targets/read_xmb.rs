@@ -9,5 +9,5 @@ fuzz_target!(|data: &[u8]| {
     
     // Test that the Xmb parser doesn't panic.
     let mut reader = std::io::Cursor::new(data);
-    xmb_lib::xmb::Xmb::read(&mut reader);
+    let _ = xmb_lib::xmb::Xmb::read(&mut reader);
 });

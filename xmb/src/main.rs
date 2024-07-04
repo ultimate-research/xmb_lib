@@ -88,16 +88,10 @@ fn write_dot_graph<P: AsRef<Path>>(output: P, xmb: &Xmb) -> std::io::Result<()> 
     // The output can be visualized here: https://edotor.net/
     file.write_all(b"digraph G {\n")?;
     file.write_all(b"\tgraph [ranksep=2];\n")?;
-    for (i, entry) in xmb.entries.0.as_ref().unwrap().iter().enumerate() {
+    for (i, entry) in xmb.entries.iter().enumerate() {
         // Add an edge from parent to child.
         if entry.parent_index != -1 {
-            if let Some(parent) = xmb
-                .entries
-                .0
-                .as_ref()
-                .unwrap()
-                .get(entry.parent_index as usize)
-            {
+            if let Some(parent) = xmb.entries.get(entry.parent_index as usize) {
                 // TODO: Avoid adding duplicate edges?
                 // if parent.unk1 != i as i16 {
                 writeln!(
@@ -113,7 +107,7 @@ fn write_dot_graph<P: AsRef<Path>>(output: P, xmb: &Xmb) -> std::io::Result<()> 
 
         // Add the unk1 edges in a different color.
         if entry.unk1 < xmb.entry_count as i16 && entry.unk1 >= 0 {
-            let next_node = &xmb.entries.0.as_ref().unwrap()[entry.unk1 as usize];
+            let next_node = &xmb.entries[entry.unk1 as usize];
             writeln!(
                 &mut file,
                 "\t\"{}: {}\" -> \"{}: {}\" [color=blue]",

@@ -5,18 +5,16 @@ authors = ["ScanMountGoat"]
 edition = "2021"
 
 [dependencies]
-binrw = "0.13.3"
+binrw = "0.14.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 arbitrary = { version = "1.0", features = ["derive"], optional = true }
 xmltree = { version = "0.10.3", features = ["attribute-order"] }
 indexmap = "1.7.0"
-ssbh_lib = "0.18.0"
-ssbh_write = "0.18.0"
+xc3_write = "0.10.0"
 
 [dev-dependencies]
 indoc = "2.0"
 
 [features]
-arbitrary = ["dep:arbitrary", "ssbh_lib/arbitrary"]
-serde = ["dep:serde", "ssbh_lib/serde", "indexmap/serde"]
+serde = ["dep:serde", "indexmap/serde"]

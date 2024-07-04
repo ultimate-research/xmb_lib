@@ -1,6 +1,5 @@
 use binrw::io::Cursor;
 use indexmap::{IndexMap, IndexSet};
-use ssbh_lib::Ptr32;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;
@@ -296,12 +295,17 @@ impl From<&XmbFile> for Xmb {
             attribute_count: attributes.len() as u32,
             string_count: string_offsets.len() as u32,
             mapped_entry_count: mapped_entries.len() as u32,
-            string_offsets: XmbVec::new(string_offsets.values().copied().collect()),
-            entries: XmbVec::new(entries),
-            attributes: XmbVec::new(attributes),
-            mapped_entries: XmbVec::new(mapped_entries),
-            string_names: Ptr32::new(NamesBuffer(names_buffer.into_inner())),
-            string_values: Ptr32::new(ValuesBuffer(values_buffer.into_inner())),
+            string_offsets: string_offsets.values().copied().collect(),
+            entries,
+            attributes,
+            mapped_entries,
+            string_names: NamesBuffer {
+                data: names_buffer.into_inner(),
+            },
+            string_values: ValuesBuffer {
+                data: values_buffer.into_inner(),
+            },
+            unks: [0; 5],
         }
     }
 }
@@ -452,7 +456,7 @@ fn get_attributes(xmb_data: &Xmb, entry: &Entry) -> Option<IndexMap<String, Stri
         .map(|i| {
             // TODO: Don't perform unchecked arithmetic and indexing with signed numbers.
             let attribute_index = (entry.attribute_start_index as u16 + i) as usize;
-            let attribute = &xmb_data.attributes.0.as_ref()?.get(attribute_index)?;
+            let attribute = &xmb_data.attributes.get(attribute_index)?;
             let key = xmb_data.read_name(attribute.name_offset)?;
             let value = xmb_data.read_value(attribute.value_offset)?;
             Some((key, value))
@@ -469,9 +473,6 @@ fn create_children_recursive(
 ) -> Option<XmbFileEntry> {
     let child_entries: Vec<_> = xmb_data
         .entries
-        .0
-        .as_ref()
-        .unwrap()
         .iter()
         .enumerate()
         .filter(|(_, e)| e.parent_index == entry_index)
@@ -494,14 +495,13 @@ fn create_xmb_file(xmb_data: &Xmb) -> Option<XmbFile> {
     // Then recursively add their children based on the parent index.
     // Assume a null pointer just means no entries.
     // TODO: Return an error instead of an option?
-    let roots: Vec<_> = xmb_data.entries.0.as_ref().and_then(|entries| {
-        entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.parent_index == -1)
-            .map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
-            .collect()
-    })?;
+    let roots: Vec<_> = xmb_data
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.parent_index == -1)
+        .filter_map(|(i, e)| create_children_recursive(xmb_data, e, i as i16))
+        .collect();
 
     Some(XmbFile { entries: roots })
 }
@@ -601,25 +601,23 @@ mod tests {
         let xmb = Xmb::from(&xmb_file);
 
         assert_eq!(4, xmb.entry_count);
-        let entries = xmb.entries.0.as_ref().unwrap();
-        assert_eq!(4, entries.len());
+        assert_eq!(4, xmb.entries.len());
         // TODO: Document this order?
-        assert_eq!(-1, entries[0].parent_index); // root
-        assert_eq!(0, entries[1].parent_index); // child1
-        assert_eq!(0, entries[2].parent_index); // child2
-        assert_eq!(1, entries[3].parent_index); // subchild1
+        assert_eq!(-1, xmb.entries[0].parent_index); // root
+        assert_eq!(0, xmb.entries[1].parent_index); // child1
+        assert_eq!(0, xmb.entries[2].parent_index); // child2
+        assert_eq!(1, xmb.entries[3].parent_index); // subchild1
 
         assert_eq!(9, xmb.attribute_count);
-        assert_eq!(9, xmb.attributes.0.as_ref().unwrap().len());
+        assert_eq!(9, xmb.attributes.len());
 
         assert_eq!(10, xmb.string_count);
 
         // child1 and child2 have "id" attributes.
         // The order is flipped here since the ids are sorted.
         assert_eq!(2, xmb.mapped_entry_count);
-        let mapped_entries = xmb.mapped_entries.0.as_ref().unwrap();
-        assert_eq!(2, mapped_entries[0].entry_index);
-        assert_eq!(1, mapped_entries[1].entry_index);
+        assert_eq!(2, xmb.mapped_entries[0].entry_index);
+        assert_eq!(1, xmb.mapped_entries[1].entry_index);
     }
 
     #[test]
