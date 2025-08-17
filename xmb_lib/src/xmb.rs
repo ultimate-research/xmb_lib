@@ -5,7 +5,7 @@ use std::{
     io::{Cursor, Read, Seek, SeekFrom, Write},
     path::Path,
 };
-use xc3_write::{write_full, Xc3Write, Xc3WriteOffsets};
+use xc3_write::{WriteFull, Xc3Write, Xc3WriteOffsets};
 // TODO: Limit the number of nodes to fall within the appropriate ranges?
 // This is limited by the number of bits for the indices rather than entry count.
 // TODO: Document remaining fields.
@@ -180,7 +180,7 @@ impl Xmb {
     }
 
     pub fn write<W: Write + Seek>(&self, writer: &mut W) -> std::io::Result<()> {
-        write_full(self, writer, 0, &mut 0)?;
+        self.write_full(writer, 0, &mut 0, xc3_write::Endian::Little, ())?;
         Ok(())
     }
 

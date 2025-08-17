@@ -5,13 +5,13 @@ authors = ["ScanMountGoat"]
 edition = "2021"
 
 [dependencies]
-binrw = "0.14.0"
-thiserror = "1.0"
+binrw = "0.15.0"
+thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 arbitrary = { version = "1.0", features = ["derive"], optional = true }
-xmltree = { version = "0.10.3", features = ["attribute-order"] }
-indexmap = "1.7.0"
-xc3_write = "0.10.0"
+xmltree = { version = "0.11.0", features = ["attribute-order"] }
+indexmap = "2.1.0"
+xc3_write = "0.20.0"
 
 [dev-dependencies]
 indoc = "2.0"
